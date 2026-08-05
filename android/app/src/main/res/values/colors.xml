@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ZenNotes dark-hard background (matches SplashScreen backgroundColor
+         and the pre-boot theme seeded in index.html). -->
+    <color name="znBackground">#1d2021</color>
+</resources>

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#1d2021" />
+    <title>ZenNotes</title>
+    <script>
+      // Pre-module bootstrap. Must run before ANY app code: the app-core
+      // store reads localStorage at module-evaluation time, and Rollup chunk
+      // hoisting means no module of ours is guaranteed to run first — a
+      // classic script is.
+      ;(function () {
+        var KEY = 'zen:prefs:v2'
+        try {
+          // First run on this device: vim off (soft keyboard; Settings can
+          // re-enable), skip the desktop onboarding wizard (the vault is
+          // auto-provisioned; theme/vim live in Settings).
+          if (localStorage.getItem(KEY) === null) {
+            localStorage.setItem(
+              KEY,
+              JSON.stringify({ vimMode: false, hasCompletedOnboarding: true })
+            )
+          }
+        } catch (e) {}
+        // Theme attributes before first paint so dark users never see a flash.
+        var themeId = 'dark-hard'
+        var themeMode = 'dark'
+        try {
+          var raw = localStorage.getItem(KEY)
+          if (raw) {
+            var prefs = JSON.parse(raw)
+            if (typeof prefs.themeId === 'string' && prefs.themeId) themeId = prefs.themeId
+            if (prefs.themeMode === 'light' || prefs.themeMode === 'dark') {
+              themeMode = prefs.themeMode
+            } else if (prefs.themeMode === 'auto') {
+              themeMode = window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+            }
+          }
+        } catch (e) {}
+        document.documentElement.dataset.theme = themeId
+        document.documentElement.dataset.themeMode = themeMode
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

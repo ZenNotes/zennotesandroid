@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["vite/client", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@renderer/*": ["../../opensource/zennotes/packages/app-core/src/*"],
+      "@shared/*": ["../../opensource/zennotes/packages/shared-domain/src/*"],
+      "@bridge-contract/*": ["../../opensource/zennotes/packages/bridge-contract/src/*"],
+      "@zennotes/app-core/*": ["../../opensource/zennotes/packages/app-core/src/*"],
+      "@zennotes/shared-domain/*": ["../../opensource/zennotes/packages/shared-domain/src/*"],
+      "@zennotes/bridge-contract/*": ["../../opensource/zennotes/packages/bridge-contract/src/*"],
+      "@desktop-main/*": ["../../opensource/zennotes/apps/desktop/src/main/*"],
+      "@codemirror/*": ["../../opensource/zennotes/node_modules/@codemirror/*"],
+      "@lezer/*": ["../../opensource/zennotes/node_modules/@lezer/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "capacitor.config.ts"]
+}

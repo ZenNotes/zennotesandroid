@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.DS_Store
+
+# Capacitor / Android generated
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/capacitor-cordova-android-plugins/
+
+# Release archives / exports (local only)
+build/
+
+docs/releases/*

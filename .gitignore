@@ -16,3 +16,7 @@ android/capacitor-cordova-android-plugins/
 build/
 
 docs/releases/*
+
+# Signing (local only — never commit)
+android/upload-keystore.jks
+android/keystore.properties

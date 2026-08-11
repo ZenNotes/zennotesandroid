@@ -133,12 +133,17 @@ substring match so React Flow stays inside the never-loaded WorkflowsView
 chunk. Check `dist/index.html`'s modulepreloads after touching the config —
 the entry must not statically import mermaid, markdown, or highlight chunks.
 
+## ZenNotes Cloud
+
+On-device and SAF vaults can connect to the optional ZenNotes Cloud service
+from Settings → Cloud. The mobile bridge stores the account token in Android
+secure storage, links or creates a cloud vault, runs the shared offline-first
+sync engine, and exposes backups, note-level restore, publishing, and
+automatic sync on app foreground and local changes. Local vaults, SAF folders,
+and self-hosted workspaces continue to work without an account or subscription.
+
 ## Not yet built
 
-- **ZenNotes Sync** (spec 04) — the E2E-encrypted first-party sync service;
-  until it ships, cross-device flows go through the SAF external-folder tier
-  + a sync tool (Syncthing/FolderSync), a self-hosted ZenNotes server
-  (remote workspace, supported), or stay on-device
 - **SAF read batching** — a `readTextMany`/native-scan plugin op to make
   large external vaults fast (see the performance note above)
 - Quick-capture home-screen widget / app shortcuts

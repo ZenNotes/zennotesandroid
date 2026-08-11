@@ -477,6 +477,11 @@ function MobileNav(): React.JSX.Element | null {
             label: isPreview ? 'Edit' : 'Read',
             icon: isPreview ? ICONS.rename : ICONS.eye,
             run: () => requestPaneMode(isPreview ? 'edit' : 'preview')
+          },
+          {
+            label: 'Publish',
+            icon: ICONS.link,
+            run: () => runCommand('note.publish')
           }
         ]
       : []),

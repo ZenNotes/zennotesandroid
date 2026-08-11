@@ -43,12 +43,13 @@ export function createCloudSyncClient(baseUrl: string, token: string): CloudSync
 
       if (response.status < 200 || response.status >= 300) {
         const error = response.data?.error
+        const validationMessage = firstValidationMessage(response.data?.errors)
         throw new CloudServiceRequestError(
-          typeof error?.message === 'string'
+          validationMessage ?? (typeof error?.message === 'string'
             ? error.message
             : typeof response.data?.message === 'string'
               ? response.data.message
-            : `ZenNotes Cloud request failed (${response.status}).`,
+              : `ZenNotes Cloud request failed (${response.status}).`),
           response.status,
           typeof error?.code === 'string' ? error.code : null
         )
@@ -59,6 +60,19 @@ export function createCloudSyncClient(baseUrl: string, token: string): CloudSync
   }
 
   return new CloudSyncApiClient(transport)
+}
+
+function firstValidationMessage(errors: unknown): string | null {
+  if (!errors || typeof errors !== 'object') return null
+
+  for (const messages of Object.values(errors)) {
+    if (Array.isArray(messages)) {
+      const message = messages.find((candidate): candidate is string => typeof candidate === 'string')
+      if (message) return message
+    }
+  }
+
+  return null
 }
 
 async function serializeFormData(form: FormData): Promise<Array<{

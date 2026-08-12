@@ -32,6 +32,14 @@ The small circle in the bottom corner is how you get around. Tap it:
 
 Every note is a plain Markdown file — **bold**, *italic*, lists, and checkboxes are all simple text. No database, no lock-in. Your notes stay readable anywhere, forever.
 
+## Math that renders live
+
+KaTeX equations, straight from plain markdown. Inline math like $e^{i\\pi} + 1 = 0$ or $A = \\pi r^2$ renders as you write, and display blocks get room to breathe:
+
+$$
+\\int_{-\\infty}^{\\infty} e^{-x^2}\\, dx = \\sqrt{\\pi}
+$$
+
 ## Capture from anywhere
 
 Reading something worth keeping? Share it from any app and choose **ZenNotes** — it lands in your notes, ready when you are.
@@ -42,7 +50,7 @@ Your notes are plain files stored privately on this device. To keep several vaul
 
 ## When you want more
 
-ZenNotes also does math, diagrams, tables, tasks with due dates, and daily notes. For a folder of example notes showing everything, tap the circle → **More** → **All commands…** and run **Generate demo tour**.
+ZenNotes also does diagrams, tables, tasks with due dates, and daily notes. For a folder of example notes showing everything, tap the circle → **More** → **All commands…** and run **Generate demo tour**.
 
 Happy writing.
 `

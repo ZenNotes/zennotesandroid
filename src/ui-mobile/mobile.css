@@ -1820,19 +1820,34 @@
   position: fixed;
   left: 0;
   right: 0;
-  /* Anchored to the keyboard's top edge (--zn-kb-top, main.tsx) rather than
-     the viewport bottom: the WebView's Native keyboard resize repaints a
-     frame or two before JS resize handlers run, so ANY bottom-relative
-     coordinate paints stale during the transition. The keyboard-top Y is
-     identical before and after the resize, so this never moves. */
-  top: var(--zn-kb-top, 100dvh);
-  transform: translateY(-100%);
+  /* Viewport-bottom anchored (diverges from the iPhone shell's --zn-kb-top
+     keyboard-top anchor, issue #7): with Native resize the shrunk WebView's
+     bottom IS the keyboard's top edge, so bottom: 0 docks exactly on the
+     keyboard. Any keyboard-top Y computed from Capacitor's keyboardWillShow
+     is wrong here — the reported keyboardHeight includes the gesture-nav
+     inset the WebView's edge-to-edge margin already excludes (toolbar floats
+     above the keyboard), and the JS resize event races the plugin event
+     (toolbar stuck mid-screen). The iOS stale-paint quirk that motivated
+     the keyboard-top anchor is WKWebView-only. */
+  bottom: 0;
   z-index: 41;
 }
 
-/* Tablets don't resize the WebView for the keyboard (see wireKeyboard) — the
-   --zn-kb-top anchor above covers them too (baseHeight never shrinks there),
-   and the editor gets scroll headroom so the caret can't hide under the
+/* Non-resizing keyboard mode (tablets — see wireKeyboard): the viewport
+   keeps its full height, so lift the toolbar above the keyboard frame. */
+.zn-kb-noresize .zn-editor-toolbar {
+  bottom: var(--zn-kb-height, 0px);
+}
+
+/* Phones: the docked toolbar overlays the bottom of the shrunk viewport —
+   give the editor matching scroll headroom so the caret at the end of the
+   note can sit above it. */
+.zn-mobile.zn-kb-open .cm-scroller {
+  padding-bottom: 3.5rem !important;
+}
+
+/* Tablets don't resize the WebView for the keyboard (see wireKeyboard) —
+   the editor gets scroll headroom so the caret can't hide under the
    keyboard. */
 @media (min-width: 768px) {
   .zn-mobile.zn-kb-open .cm-scroller {

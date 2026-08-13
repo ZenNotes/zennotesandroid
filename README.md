@@ -101,6 +101,19 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   real `contextmenu` event on long-press, so the iOS 450ms synthesizer is
   replaced by a passive listener that only adds the haptic and swallows the
   post-lift synthetic mouse burst (without which menus close instantly).
+- **Editing-toolbar keyboard anchor** (issue #7): the iPhone shell anchors
+  the formatting toolbar to a keyboard-top Y computed from
+  `keyboardWillShow` (`--zn-kb-top`) to dodge a WKWebView stale-paint quirk.
+  On Android that geometry is wrong twice over — the plugin's
+  `keyboardHeight` includes the gesture-nav inset the edge-to-edge WebView
+  margin already excludes, and the plugin event races the JS `resize` event
+  (toolbar stuck mid-screen). Here the toolbar is viewport-bottom anchored
+  (`bottom: 0` on the natively-resized viewport; lifted by `--zn-kb-height`
+  under the `zn-kb-noresize` tablet mode instead of a media query, so
+  landscape phones keep the docked anchor). The toolbar's dismiss button
+  also blurs the editor before `Keyboard.hide()` — Android's hide is
+  `hideSoftInputFromWindow` only (no `endEditing`-style focus resign like
+  iOS), and a still-focused editor re-summons the keyboard.
 - **TikZ** capability-gated off; workflows not offered; custom TextMate
   languages gated off; vim mode defaults off on first run — all as on iOS.
 - **Desktop 2.21/2.22 features** arrive via shared source, same as the iOS

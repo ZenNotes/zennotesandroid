@@ -227,6 +227,13 @@ export function MobileEditorToolbar(): React.JSX.Element | null {
         onPointerDown={(e) => e.preventDefault()}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
+          // Blur first: Android's Keyboard.hide() is hideSoftInputFromWindow
+          // only — it does NOT resign focus like iOS's endEditing, and a
+          // still-focused editor's input connection re-summons the keyboard
+          // right after (issue #7). Blurring also flips `editing`, so the
+          // toolbar itself closes with the keyboard.
+          const active = document.activeElement
+          if (active instanceof HTMLElement) active.blur()
           void Keyboard.hide().catch(() => {})
         }}
       >

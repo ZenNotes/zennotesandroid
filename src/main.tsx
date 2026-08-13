@@ -25,39 +25,32 @@ import { mountMobileShell } from './ui-mobile/MobileShell'
 import './ui-mobile/mobile.css'
 
 function wireKeyboard(): void {
+  const html = document.documentElement
   // Tablets: hardware keyboards / the floating mini-keyboard still report a
   // "keyboard frame", and Native resize would shrink the WebView leaving a
   // black band where no keyboard is. Don't resize there — the toolbar lifts
-  // by --zn-kb-height in CSS instead. Phones keep Native resize (the soft
-  // keyboard is the norm and resizing keeps the caret visible).
+  // by --zn-kb-height in CSS instead (the zn-kb-noresize class gates that
+  // rule to this branch, so a phone rotated past the tablet media breakpoint
+  // never picks it up). Phones keep Native resize (the soft keyboard is the
+  // norm and resizing keeps the caret visible); the toolbar docks with
+  // bottom: 0 on the shrunk viewport — the keyboard's top edge. Unlike the
+  // iPhone shell, nothing is computed from keyboardWillShow's geometry: on
+  // Android the reported keyboardHeight includes the gesture-nav inset the
+  // edge-to-edge WebView margin already excludes, and the plugin event races
+  // the JS resize event, so any derived keyboard-top Y is unreliable
+  // (issue #7's mid-screen toolbar).
   if (window.innerWidth >= 768) {
+    html.classList.add('zn-kb-noresize')
     void Keyboard.setResizeMode({ mode: KeyboardResize.None }).catch(() => {})
   }
-  const html = document.documentElement
-  // Phones (Native resize): the WebView shrinks only after the keyboard
-  // animation, and WKWebView paints a frame or two with the new viewport
-  // BEFORE any JS resize handler runs — so any bottom-anchored coordinate
-  // (bottom:0, or a lift that must flip at the resize) paints stale for
-  // those frames (frame-by-frame video showed the toolbar dark mid-screen
-  // for ~2 frames). The keyboard's top edge, however, sits at ONE viewport-Y
-  // through the whole transition (the WebView stays anchored to the screen
-  // top): baseHeight - keyboardHeight. Publish that as --zn-kb-top; the
-  // toolbar anchors to it with top + translateY(-100%) and never has to
-  // move at the resize boundary at all.
-  let baseHeight = window.innerHeight
   void Keyboard.addListener('keyboardWillShow', (info) => {
     html.classList.add('zn-kb-open')
     html.style.setProperty('--zn-kb-height', `${info.keyboardHeight}px`)
-    html.style.setProperty('--zn-kb-top', `${baseHeight - info.keyboardHeight}px`)
   }).catch(() => {})
   void Keyboard.addListener('keyboardWillHide', () => {
     html.classList.remove('zn-kb-open')
     html.style.setProperty('--zn-kb-height', '0px')
-    html.style.removeProperty('--zn-kb-top')
   }).catch(() => {})
-  window.addEventListener('resize', () => {
-    if (!html.classList.contains('zn-kb-open')) baseHeight = window.innerHeight
-  })
 }
 
 function wireForegroundRescan(): void {

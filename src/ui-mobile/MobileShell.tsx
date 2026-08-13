@@ -718,9 +718,11 @@ function useBreadcrumbDrawerNav(): void {
  * synthesize the event from a 450ms press timer), the Android WebView fires a
  * real `contextmenu` on long-press, so React's handlers run on their own.
  * What Android still needs from the shim: a haptic tick on chrome surfaces,
- * and swallowing the post-lift synthetic mousedown/mouseup/click burst —
+ * swallowing the post-lift synthetic mousedown/mouseup/click burst —
  * ContextMenu closes on window mousedown, so without the suppression the
- * menu vanishes the instant the finger lifts.
+ * menu vanishes the instant the finger lifts — and keeping app-core's
+ * editor menu OUT of the editor so text selection stays native (issue #8,
+ * see the .cm-editor branch below).
  *
  * The task surfaces (list rows, kanban cards, calendar day cells) joined in
  * upstream 2.21: the shared task menu is where "Mark in progress" lives, so
@@ -739,7 +741,23 @@ function useLongPressContextMenu(): void {
     const onContextMenu = (e: MouseEvent): void => {
       const t = e.target as HTMLElement | null
       if (!t || typeof t.closest !== 'function') return
-      if (t.closest('.cm-editor') || t.closest('input, textarea')) return
+      if (t.closest('.cm-editor')) {
+        // The editor keeps NATIVE text-selection UI, as on iOS. Left
+        // alone, the real contextmenu Android fires on long-press (and
+        // again on selection-handle lifts and text-handle menu taps)
+        // reaches app-core's editor menu, which preventDefaults
+        // Chromium's selection action bar and opens at the finger —
+        // directly over the selection (issue #8). Stopping propagation
+        // keeps app-core out of the path WITHOUT preventDefault, so
+        // Chromium shows its own action bar (positioned clear of the
+        // selection, hidden while handles drag). No pointerType carve-out
+        // for mice: Chromium reports handle-menu taps as 'mouse', so the
+        // gate can't be trusted, and a real right-click falling back to
+        // the native menu is fine.
+        e.stopPropagation()
+        return
+      }
+      if (t.closest('input, textarea')) return
       if (!t.closest(LONG_PRESS_SURFACES)) return
       void Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {})
       suppressNextClickUntil = Date.now() + 700

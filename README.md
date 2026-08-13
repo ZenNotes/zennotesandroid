@@ -101,6 +101,14 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   real `contextmenu` event on long-press, so the iOS 450ms synthesizer is
   replaced by a passive listener that only adds the haptic and swallows the
   post-lift synthetic mouse burst (without which menus close instantly).
+  Inside the editor the listener instead STOPS the event (issue #8): both
+  shells keep text selection native there, but on Android the real
+  contextmenu would otherwise reach app-core's editor menu, which
+  preventDefaults Chromium's selection action bar and opens at the finger —
+  directly over the selection. Stopping propagation (never preventDefault)
+  restores the native handles + action bar, including the events Chromium
+  refires on selection-handle lifts and text-handle menu taps (those report
+  `pointerType: 'mouse'`, so there is deliberately no mouse carve-out).
 - **Editing-toolbar keyboard anchor** (issue #7): the iPhone shell anchors
   the formatting toolbar to a keyboard-top Y computed from
   `keyboardWillShow` (`--zn-kb-top`) to dodge a WKWebView stale-paint quirk.

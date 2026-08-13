@@ -50,6 +50,12 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   storage. **Do not switch to `Directory.Documents`** — on Android that is the
   public Documents collection, which the Filesystem plugin permission-gates
   and Android 11+ scoped storage effectively breaks.
+- **Durable app preferences.** WebView localStorage is evictable on some
+  devices, which silently reset theme and editor settings. `src/bootstrap.ts`
+  mirrors `zen:prefs:v2` into native Capacitor Preferences on every write,
+  restores it before app-core loads (the dynamic `import('./main')` preserves
+  the module-eval ordering the inline index.html seed script relies on), and
+  re-applies the theme attributes pre-paint.
 - **Two storage tiers.** Default: app-scoped storage (above) — with a
   one-time boot probe (`initVaultsRoot`) that falls back to internal app
   storage (`Directory.Data`) on devices where `getExternalFilesDir` is

@@ -50,7 +50,12 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   storage. **Do not switch to `Directory.Documents`** — on Android that is the
   public Documents collection, which the Filesystem plugin permission-gates
   and Android 11+ scoped storage effectively breaks.
-- **Two storage tiers.** Default: app-scoped storage (above). Advanced: the
+- **Two storage tiers.** Default: app-scoped storage (above) — with a
+  one-time boot probe (`initVaultsRoot`) that falls back to internal app
+  storage (`Directory.Data`) on devices where `getExternalFilesDir` is
+  unusable (custom ROMs / restricted profiles crashed at first launch with
+  "Missing parent directory", issue #2); the chosen root is persisted so it
+  never flips between launches. Advanced: the
   **SAF external-folder tier** (spec 03) — "Choose Folder…" in the New Vault
   sheet opens `ACTION_OPEN_DOCUMENT_TREE` (`FolderPickerPlugin.java`; the
   persisted tree-URI permission is the "bookmark", surviving reboots), and
@@ -60,6 +65,13 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   Filesystem cannot address tree URIs. This is the tier that enables
   Syncthing/FolderSync cross-device workflows. iCloud stays iOS-only;
   `icloud.ts` is kept (inert) to minimize drift against the iPhone shell.
+  Unlike the iPhone shell's single-bookmark slot, `folder-picker.ts` keeps a
+  **registry of every picked folder** (`zn-mobile:external-vaults`, with the
+  legacy single-ref key as the "current" pointer and migration seed) so any
+  number of SAF folder vaults stay switchable (zennotes#584) — external-tier
+  root tokens carry the bookmark URI (`zn://external-vaults/<encoded-uri>`).
+  Porting this back to iOS is a known follow-up; multiple security-scoped
+  bookmarks are equally legal there.
 - **SAF performance (measured, Pixel 7 AVD, 500-note vault):** ~2 ms/op on
   app storage vs ~35 ms/op over SAF (~17×). Cold open+index: ~3.3 s local vs
   ~20 s SAF; warm relaunch: ~2.6 s vs ~23 s — dominated by a per-launch

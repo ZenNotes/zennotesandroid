@@ -8,7 +8,7 @@
  */
 import { registerPlugin } from '@capacitor/core'
 import { Filesystem } from '@capacitor/filesystem'
-import { VAULTS_DIR, VAULTS_ROOT } from './native-fs'
+import { VAULTS_DIR, vaultsRoot } from './native-fs'
 
 export interface ICloudStatus {
   available: boolean
@@ -59,7 +59,7 @@ export async function ensureDownloaded(url: string, timeoutMs = 20000): Promise<
 
 /** POSIX path of a local vault (for setUbiquitous), e.g. before migration. */
 export async function localVaultPath(name: string): Promise<string> {
-  const { uri } = await Filesystem.getUri({ directory: VAULTS_ROOT, path: VAULTS_DIR })
+  const { uri } = await Filesystem.getUri({ directory: vaultsRoot(), path: VAULTS_DIR })
   return `${decodeURIComponent(uri.replace('file://', ''))}/${name}`
 }
 

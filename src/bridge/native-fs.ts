@@ -22,8 +22,48 @@ import { Directory, Encoding, Filesystem, type FileInfo } from '@capacitor/files
 import { ensureDownloaded } from './icloud'
 
 export const VAULTS_DIR = 'ZenNotes'
-/** Root Directory for the local vault tier (see header). */
-export const VAULTS_ROOT = Directory.External
+
+/**
+ * Root Directory for the local vault tier (see header). Directory.External
+ * normally, but some devices boot with getExternalFilesDir unusable (custom
+ * ROMs, restricted profiles — issue #2's "Missing parent directory" crash),
+ * so boot probes it once and falls back to Directory.Data. The outcome is
+ * persisted: a root must never flip between launches or the user's vaults
+ * would seem to vanish.
+ */
+const VAULTS_ROOT_KEY = 'zn-mobile:vaults-root-dir'
+let vaultsRootDir: Directory =
+  localStorage.getItem(VAULTS_ROOT_KEY) === 'data' ? Directory.Data : Directory.External
+
+export function vaultsRoot(): Directory {
+  return vaultsRootDir
+}
+
+/** Resolve the local-tier root before anything touches it (bootVault). */
+export async function initVaultsRoot(): Promise<void> {
+  const stored = localStorage.getItem(VAULTS_ROOT_KEY)
+  if (stored === 'data' || stored === 'external') return
+  // mkdir rejects when the directory already exists — stat is the probe.
+  await Filesystem.mkdir({
+    path: VAULTS_DIR,
+    directory: Directory.External,
+    recursive: true
+  }).catch(() => {})
+  try {
+    await Filesystem.stat({ path: VAULTS_DIR, directory: Directory.External })
+    vaultsRootDir = Directory.External
+    localStorage.setItem(VAULTS_ROOT_KEY, 'external')
+  } catch {
+    console.warn('[zen] app-external storage is unavailable — using internal app storage')
+    vaultsRootDir = Directory.Data
+    localStorage.setItem(VAULTS_ROOT_KEY, 'data')
+    await Filesystem.mkdir({
+      path: VAULTS_DIR,
+      directory: Directory.Data,
+      recursive: true
+    }).catch(() => {})
+  }
+}
 
 /**
  * SAF document-tree file ops (SafFsPlugin.java) for external-folder vaults.
@@ -111,7 +151,7 @@ export class NativeFs {
     }
     return {
       path: relPath ? `${this.rootPath}/${relPath}` : this.rootPath,
-      directory: VAULTS_ROOT
+      directory: vaultsRoot()
     }
   }
 
@@ -128,7 +168,7 @@ export class NativeFs {
     } else {
       const { uri } = await Filesystem.getUri({
         path: this.rootPath,
-        directory: VAULTS_ROOT
+        directory: vaultsRoot()
       })
       this.rootUri = uri
     }
@@ -347,7 +387,7 @@ function mapICloudStubs(files: FileInfo[]): FileInfo[] {
 /** List vault directories under <app files>/ZenNotes (local mode). */
 export async function listVaultDirs(): Promise<{ name: string; mtime: number }[]> {
   try {
-    const res = await Filesystem.readdir({ path: VAULTS_DIR, directory: VAULTS_ROOT })
+    const res = await Filesystem.readdir({ path: VAULTS_DIR, directory: vaultsRoot() })
     return res.files
       .filter((f) => f.type === 'directory' && !f.name.startsWith('.'))
       .map((f) => ({ name: f.name, mtime: f.mtime }))

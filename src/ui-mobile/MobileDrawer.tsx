@@ -31,6 +31,7 @@ import {
   renameVault,
   deleteVault,
   forgetExternalVault,
+  currentExternalVaultRoot,
   type MobileVaultEntry
 } from '../bridge/mobile-bridge'
 import { sanitizeNoteTitle } from '../bridge/vault-core'
@@ -322,7 +323,10 @@ export function VaultsSheet({ onClose }: { onClose: () => void }): React.JSX.Ele
   // whose friendly root string varies by provider.
   const currentTier = workspaceMode === 'remote' ? 'remote' : getStoragePref()
   const isCurrent = (e: MobileVaultEntry): boolean =>
-    currentTier === e.tier && e.name === currentName
+    currentTier === e.tier &&
+    e.name === currentName &&
+    // Picked folders may share a display name — the root token decides.
+    (e.tier !== 'external' || e.root === currentExternalVaultRoot())
 
   /** Switch flows close the sheet and drawer on success. */
   const act = (key: string, fn: () => Promise<unknown>): void => {
@@ -591,7 +595,7 @@ export function VaultsSheet({ onClose }: { onClose: () => void }): React.JSX.Ele
                     type="button"
                     className="zn-mobile-sheet-row zn-danger"
                     disabled={isCurrent(view.entry)}
-                    onClick={() => manage('remove', async () => forgetExternalVault())}
+                    onClick={() => manage('remove', async () => forgetExternalVault(view.entry.root))}
                   >
                     <Icon d={D.trash} />
                     Remove from List

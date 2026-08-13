@@ -55,6 +55,7 @@ export class RemoteVault {
   /** Keys the per-connection workspace-state slot in localStorage. */
   private readonly stateKey: string
   private lastSeen = new Map<string, { updatedAt: number; size: number; folder: NoteFolder }>()
+  private hasLastSeenSnapshot = false
 
   /** Minimal stand-in for MobileVault.fs — the database layer reads raw vault
    *  files through it (/api/notes/read accepts any vault path, same as the
@@ -119,9 +120,12 @@ export class RemoteVault {
 
   async listNotes(): Promise<NoteMeta[]> {
     const notes = await this.client.listNotes()
-    this.lastSeen = new Map(
-      notes.map((n) => [n.path, { updatedAt: n.updatedAt, size: n.size ?? 0, folder: n.folder }])
-    )
+
+    if (!this.hasLastSeenSnapshot) {
+      this.lastSeen = this.snapshot(notes)
+      this.hasLastSeenSnapshot = true
+    }
+
     return notes
   }
 
@@ -393,7 +397,15 @@ export class RemoteVault {
    *  instead of a file watcher. */
   async rescan(): Promise<void> {
     const before = this.lastSeen
-    const notes = await this.listNotes()
+    const hadSnapshot = this.hasLastSeenSnapshot
+    const notes = await this.client.listNotes()
+    this.lastSeen = this.snapshot(notes)
+    this.hasLastSeenSnapshot = true
+
+    if (!hadSnapshot) {
+      return
+    }
+
     const seen = new Set(notes.map((n) => n.path))
     for (const note of notes) {
       const prev = before.get(note.path)
@@ -408,5 +420,16 @@ export class RemoteVault {
         emitVaultChange({ kind: 'unlink', path, folder: prev.folder, scope: 'content' })
       }
     }
+  }
+
+  private snapshot(
+    notes: NoteMeta[]
+  ): Map<string, { updatedAt: number; size: number; folder: NoteFolder }> {
+    return new Map(
+      notes.map((note) => [
+        note.path,
+        { updatedAt: note.updatedAt, size: note.size ?? 0, folder: note.folder }
+      ])
+    )
   }
 }

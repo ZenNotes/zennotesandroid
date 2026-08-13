@@ -38,57 +38,19 @@ function onigurumaDataUrl(): Plugin {
 
 function rendererManualChunk(id: string): string | undefined {
   const normalizedId = id.split('\\').join('/')
-  if (normalizedId.endsWith('/packages/app-core/src/lib/wikilinks.ts')) {
-    return 'app-wikilinks'
-  }
-  if (normalizedId.endsWith('/packages/app-core/src/lib/local-assets.ts')) {
-    return 'app-local-assets'
-  }
-  if (normalizedId.endsWith('/packages/app-core/src/store.ts')) {
-    return 'app-store'
-  }
 
+  // NO named chunks for app-core / react / codemirror / markdown here —
+  // and none may return. src/bootstrap.ts is the entry since 1.1.3: it must
+  // finish the async native-prefs restore BEFORE app-core's store evaluates
+  // (loadPrefs caches on first call), and the only ordering Rollup
+  // guarantees is the dynamic-import boundary bootstrap -> main. A named
+  // manual chunk reachable through that boundary gets hoisted into the
+  // entry's STATIC graph (same mechanism as the mermaid note below) and
+  // evaluates before bootstrap runs — which is exactly how the 1.1.3
+  // settings-restore silently raced and lost. Chunk naming bought nothing
+  // on-device anyway: assets ship inside the APK, so there is no HTTP
+  // cache for stable chunk hashes to help.
   if (!id.includes('node_modules')) return undefined
-
-  // `@xyflow/react` (and the zustand nested under it) must NOT ride this
-  // rule: `/react/` matches it as a substring, and vendor-react is on the
-  // boot path, so React Flow would be fetched and evaluated on every launch
-  // for the Workflows canvas — a feature mobile hides entirely. Left alone,
-  // it lands in the lazily-imported WorkflowsView chunk, which never loads
-  // here.
-  if (
-    (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/zustand/')) &&
-    !id.includes('/@xyflow/')
-  ) {
-    return 'vendor-react'
-  }
-  if (id.includes('/@codemirror/language-data/')) {
-    return 'vendor-editor-languages'
-  }
-  if (
-    id.includes('/@codemirror/') ||
-    id.includes('/codemirror/') ||
-    id.includes('/@lezer/') ||
-    id.includes('/@replit/codemirror-vim/')
-  ) {
-    return 'vendor-editor'
-  }
-  if (
-    id.includes('/remark-') ||
-    id.includes('/rehype-') ||
-    id.includes('/unified/') ||
-    id.includes('/unist-util-visit/') ||
-    id.includes('/gray-matter/') ||
-    id.includes('/katex/')
-  ) {
-    return 'vendor-markdown'
-  }
-  if (id.includes('/highlight.js/')) {
-    return 'vendor-highlight'
-  }
-  if (id.includes('/vscode-textmate/') || id.includes('/vscode-oniguruma/')) {
-    return 'vendor-textmate'
-  }
   // No manualChunks rule for mermaid / cytoscape / dagre on purpose (upstream
   // PR #507 finding). Mermaid is only ever reached through a dynamic import,
   // but forcing its modules into a named chunk makes Rollup hoist that chunk

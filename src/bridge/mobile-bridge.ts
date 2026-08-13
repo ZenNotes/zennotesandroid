@@ -121,7 +121,7 @@ import {
 } from './remote-workspace'
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 
-let appVersion = '1.1.2'
+let appVersion = '1.1.3'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {
@@ -773,6 +773,9 @@ export const mobileBridge: ZenBridge = {
   // the right defaults for Android hardware keyboards.
   platform: async () => 'linux' as NodeJS.Platform,
   platformSync: () => 'linux' as NodeJS.Platform,
+  // WebView-safe system families plus the fonts the shell bundles itself
+  // (public/fonts + index.html @font-face): Android offers no way to install
+  // fonts app-wide, so shipping them is the only path to real choices here.
   listSystemFonts: async () => [
     'Cutive Mono',
     'Droid Sans Mono',
@@ -781,6 +784,8 @@ export const mobileBridge: ZenBridge = {
     'Noto Serif',
     'Roboto',
     'Roboto Serif',
+    'Ubuntu Sans',
+    'Ubuntu Sans Mono',
     'monospace',
     'sans-serif',
     'serif'

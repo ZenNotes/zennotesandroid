@@ -70,35 +70,53 @@ const POLL_FAILURE_BACKOFF_TICKS = 5
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let pollInFlight = false
 let pollSkipTicks = 0
+let pollGeneration = 0
+let visibilityHandler: (() => void) | null = null
+
+function pollRemote(generation: number): void {
+  if (generation !== pollGeneration || !active || pollInFlight) return
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+  if (pollSkipTicks > 0) {
+    pollSkipTicks--
+    return
+  }
+
+  const remote = active
+  pollInFlight = true
+  remote.vault
+    .rescan()
+    .then(() => {
+      if (generation === pollGeneration) pollSkipTicks = 0
+    })
+    .catch(() => {
+      if (generation === pollGeneration) pollSkipTicks = POLL_FAILURE_BACKOFF_TICKS
+    })
+    .finally(() => {
+      if (generation === pollGeneration) pollInFlight = false
+    })
+}
 
 function startRemotePolling(): void {
   stopRemotePolling()
-  pollTimer = setInterval(() => {
-    if (!active || pollInFlight) return
-    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
-    if (pollSkipTicks > 0) {
-      pollSkipTicks--
-      return
-    }
-    pollInFlight = true
-    active.vault
-      .rescan()
-      .then(() => {
-        pollSkipTicks = 0
-      })
-      .catch(() => {
-        pollSkipTicks = POLL_FAILURE_BACKOFF_TICKS
-      })
-      .finally(() => {
-        pollInFlight = false
-      })
-  }, REMOTE_POLL_MS)
+  const generation = pollGeneration
+  pollTimer = setInterval(() => pollRemote(generation), REMOTE_POLL_MS)
+  pollRemote(generation)
+
+  if (typeof document !== 'undefined') {
+    visibilityHandler = () => pollRemote(generation)
+    document.addEventListener('visibilitychange', visibilityHandler)
+  }
 }
 
 function stopRemotePolling(): void {
+  pollGeneration++
   if (pollTimer) {
     clearInterval(pollTimer)
     pollTimer = null
+  }
+  if (visibilityHandler && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', visibilityHandler)
+    visibilityHandler = null
   }
   pollInFlight = false
   pollSkipTicks = 0

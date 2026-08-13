@@ -54,6 +54,56 @@ export function activeRemote(): ActiveRemote | null {
   return active
 }
 
+// --- Live updates -----------------------------------------------------------
+// The server streams vault changes over a WebSocket (/api/watch) that the
+// desktop and web clients subscribe to, but a WebView WebSocket can neither
+// send the Bearer header nor pass the server's Origin check (zennotesandroid
+// Péter's report: web/mac edits never reached Android). So the shell polls:
+// while a remote workspace is connected and the app is visible, rescan()
+// diffs a listNotes snapshot and emits the same change events the watcher
+// would. A native WebSocket plugin (OkHttp / URLSessionWebSocketTask can set
+// both headers) is the instant-update upgrade path.
+const REMOTE_POLL_MS = 4000
+// Ticks skipped after a failed poll, so an unreachable server costs one
+// request every ~20s instead of hammering timeouts every tick.
+const POLL_FAILURE_BACKOFF_TICKS = 5
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollInFlight = false
+let pollSkipTicks = 0
+
+function startRemotePolling(): void {
+  stopRemotePolling()
+  pollTimer = setInterval(() => {
+    if (!active || pollInFlight) return
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+    if (pollSkipTicks > 0) {
+      pollSkipTicks--
+      return
+    }
+    pollInFlight = true
+    active.vault
+      .rescan()
+      .then(() => {
+        pollSkipTicks = 0
+      })
+      .catch(() => {
+        pollSkipTicks = POLL_FAILURE_BACKOFF_TICKS
+      })
+      .finally(() => {
+        pollInFlight = false
+      })
+  }, REMOTE_POLL_MS)
+}
+
+function stopRemotePolling(): void {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  pollInFlight = false
+  pollSkipTicks = 0
+}
+
 export function remoteWorkspaceInfo(): RemoteWorkspaceInfo | null {
   if (!active) return null
   return {
@@ -173,6 +223,7 @@ export async function connectRemote(
     vault: new RemoteVault(client, serverVault, remoteStateKey(client.baseUrl, serverVault), capabilities)
   }
   await writeMode({ mode: 'remote', profileId })
+  startRemotePolling()
   if (profileId) {
     const profiles = await readProfiles()
     await writeProfiles(
@@ -194,6 +245,7 @@ export async function connectRemoteProfile(
 }
 
 export async function disconnectRemote(): Promise<void> {
+  stopRemotePolling()
   active = null
   await writeMode({ mode: 'local', profileId: null })
 }

@@ -24,7 +24,9 @@ import {
 import { createCloudSyncClient } from './cloud-sync-client'
 
 const DEVELOPMENT_CLOUD_BASE_URL = import.meta.env.VITE_ZENNOTES_CLOUD_DEV_URL?.trim()
-const DEFAULT_CLOUD_BASE_URL = DEVELOPMENT_CLOUD_BASE_URL || 'https://zennotes.laravel.cloud'
+const PRODUCTION_CLOUD_BASE_URL = 'https://zennotes.org'
+const LEGACY_CLOUD_BASE_URL = 'https://zennotes.laravel.cloud'
+const DEFAULT_CLOUD_BASE_URL = DEVELOPMENT_CLOUD_BASE_URL || PRODUCTION_CLOUD_BASE_URL
 const PENDING_AUTH_KEY = 'pending-auth'
 const CREDENTIAL_KEY = 'credential'
 const accountListeners = new Set<(status: CloudAccountStatus) => void>()
@@ -59,12 +61,19 @@ const storage: CloudAuthStorage = {
   async loadCredential(): Promise<unknown> {
     if (!Capacitor.isNativePlatform()) return null
     await secureStorageReady
-    return parseStoredJson(await SecureStorage.getItem(CREDENTIAL_KEY))
+    const credential = migrateLegacyCloudCredential(
+      parseStoredJson(await SecureStorage.getItem(CREDENTIAL_KEY))
+    )
+    if (credential.migrated) {
+      await SecureStorage.setItem(CREDENTIAL_KEY, JSON.stringify(credential.value))
+    }
+    return credential.value
   },
   async saveCredential(credential: CloudAuthCredential): Promise<void> {
     assertNativeCloudAuth()
     await secureStorageReady
-    await SecureStorage.setItem(CREDENTIAL_KEY, JSON.stringify(credential))
+    const canonicalCredential = migrateLegacyCloudCredential(credential).value
+    await SecureStorage.setItem(CREDENTIAL_KEY, JSON.stringify(canonicalCredential))
   },
   async deleteCredential(): Promise<void> {
     if (!Capacitor.isNativePlatform()) return
@@ -228,6 +237,24 @@ function parseStoredJson(value: string | null): unknown {
     return JSON.parse(value) as unknown
   } catch {
     return {}
+  }
+}
+
+function migrateLegacyCloudCredential(value: unknown): { migrated: boolean; value: unknown } {
+  if (!isRecord(value) || value.base_url !== LEGACY_CLOUD_BASE_URL || !isRecord(value.account)) {
+    return { migrated: false, value }
+  }
+
+  return {
+    migrated: true,
+    value: {
+      ...value,
+      base_url: PRODUCTION_CLOUD_BASE_URL,
+      account: {
+        ...value.account,
+        base_url: PRODUCTION_CLOUD_BASE_URL
+      }
+    }
   }
 }
 

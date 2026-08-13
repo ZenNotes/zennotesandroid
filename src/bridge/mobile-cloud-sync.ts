@@ -25,6 +25,7 @@ import {
   authenticatedClient,
   getMobileCloudAccountStatus
 } from './mobile-cloud-auth'
+import { emitVaultChange } from './events'
 
 const STORAGE_ROOT = 'zennotes-cloud-sync'
 
@@ -75,7 +76,13 @@ export async function unlinkMobileCloudVault(vault: MobileVault): Promise<void> 
 }
 
 export async function syncMobileCloudVault(vault: MobileVault): Promise<CloudSyncRunSummary> {
-  return service.sync(hostVault(vault))
+  const summary = await service.sync(hostVault(vault))
+
+  if (summary.pulled > 0) {
+    emitVaultChange({ kind: 'change', path: '', folder: 'inbox', scope: 'resync' })
+  }
+
+  return summary
 }
 
 export async function listMobileCloudBackups(vault: MobileVault): Promise<CloudBackupSnapshot[]> {

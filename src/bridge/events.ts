@@ -1,8 +1,8 @@
 /**
  * Vault change events. Mobile has no chokidar/fsnotify; the three sources the
  * mobile spec names are (1) in-app writes (every mutating bridge call emits),
- * (2) app-foreground rescan, and (3) sync — not present in this build. The
- * subscription API is identical to desktop/web so app-core consumes it as-is.
+ * (2) app-foreground rescan, and (3) successful cloud pulls. The subscription
+ * API is identical to desktop/web so app-core consumes it as-is.
  */
 import type { VaultChangeEvent } from '@bridge-contract/ipc'
 

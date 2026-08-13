@@ -57,7 +57,7 @@ import type {
   McpServerRuntime
 } from '@shared/mcp-clients'
 import { MobileVault } from './vault-fs'
-import { listVaultDirs, VAULTS_DIR, VAULTS_ROOT } from './native-fs'
+import { listVaultDirs, VAULTS_DIR, vaultsRoot, initVaultsRoot } from './native-fs'
 import { Filesystem } from '@capacitor/filesystem'
 import {
   getStoragePref,
@@ -68,7 +68,9 @@ import {
 } from './icloud'
 import {
   getExternalVaultRef,
+  getExternalVaultRefs,
   setExternalVaultRef,
+  removeExternalVaultRef,
   pickExternalVault,
   resolveExternalVault
 } from './folder-picker'
@@ -119,7 +121,7 @@ import {
 } from './remote-workspace'
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 
-let appVersion = '1.1.1'
+let appVersion = '1.1.2'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {
@@ -137,9 +139,28 @@ export const VAULT_ROOT_PREFIX = 'zn://vaults/'
 // entry point can route a switch to either storage tier (the vault switcher
 // sheet passes these tokens through the store's openLocalVault action).
 export const ICLOUD_VAULT_ROOT_PREFIX = 'zn://icloud-vaults/'
-// The one bookmarked Files-app folder (external tier) — a fixed token, since
-// only a single security-scoped bookmark is kept at a time.
+// External-tier roots carry the folder's bookmark URI, so any number of
+// picked folders stay switchable (zennotes#584). The bare legacy token is
+// still accepted and means "the current external vault".
 export const EXTERNAL_VAULT_ROOT = 'zn://external-vault'
+export const EXTERNAL_VAULT_ROOT_PREFIX = 'zn://external-vaults/'
+
+export function externalVaultRoot(bookmark: string): string {
+  return `${EXTERNAL_VAULT_ROOT_PREFIX}${encodeURIComponent(bookmark)}`
+}
+
+function externalBookmarkFromRoot(root: string): string | null {
+  if (root === EXTERNAL_VAULT_ROOT) return getExternalVaultRef()?.bookmark ?? null
+  if (!root.startsWith(EXTERNAL_VAULT_ROOT_PREFIX)) return null
+  return decodeURIComponent(root.slice(EXTERNAL_VAULT_ROOT_PREFIX.length))
+}
+
+/** Root token of the external vault that is currently pointed at, for the
+ *  sheet's "currently open" checks — two picked folders may share a name. */
+export function currentExternalVaultRoot(): string | null {
+  const ref = getExternalVaultRef()
+  return ref ? externalVaultRoot(ref.bookmark) : null
+}
 
 export interface MobileVaultEntry {
   root: string
@@ -201,8 +222,9 @@ export async function listSwitchableVaults(): Promise<MobileVaultEntry[]> {
       })
     }
   }
-  const external = getExternalVaultRef()
-  if (external) out.push({ root: EXTERNAL_VAULT_ROOT, name: external.name, tier: 'external' })
+  for (const ref of getExternalVaultRefs()) {
+    out.push({ root: externalVaultRoot(ref.bookmark), name: ref.name, tier: 'external' })
+  }
   return out
 }
 
@@ -217,7 +239,10 @@ export async function listSwitchableVaults(): Promise<MobileVaultEntry[]> {
 export function isCurrentVaultEntry(entry: MobileVaultEntry): boolean {
   if (activeRemote()) return false
   if (!vault || vault.name !== entry.name) return false
-  return getStoragePref() === entry.tier
+  if (getStoragePref() !== entry.tier) return false
+  // Same-named external folders are legal — the bookmark is the identity.
+  if (entry.tier === 'external') return entry.root === currentExternalVaultRoot()
+  return true
 }
 
 async function icloudVaultUrl(name: string): Promise<string> {
@@ -253,8 +278,8 @@ export async function renameVault(entry: MobileVaultEntry, newName: string): Pro
     await Filesystem.rename({
       from: `${VAULTS_DIR}/${entry.name}`,
       to: `${VAULTS_DIR}/${clean}`,
-      directory: VAULTS_ROOT,
-      toDirectory: VAULTS_ROOT
+      directory: vaultsRoot(),
+      toDirectory: vaultsRoot()
     })
     if (wasCurrent) await openVaultByName(clean)
   }
@@ -265,7 +290,7 @@ export async function renameVault(entry: MobileVaultEntry, newName: string): Pro
 export async function deleteVault(entry: MobileVaultEntry): Promise<void> {
   if (isCurrentVaultEntry(entry)) throw new Error('Switch to another vault first.')
   if (entry.tier === 'external') {
-    setExternalVaultRef(null)
+    forgetExternalVault(entry.root)
     return
   }
   if (entry.tier === 'icloud') {
@@ -273,15 +298,18 @@ export async function deleteVault(entry: MobileVaultEntry): Promise<void> {
   } else {
     await Filesystem.rmdir({
       path: `${VAULTS_DIR}/${entry.name}`,
-      directory: VAULTS_ROOT,
+      directory: vaultsRoot(),
       recursive: true
     })
   }
 }
 
-/** Forget the Files-app folder bookmark without touching its contents. */
-export function forgetExternalVault(): void {
-  setExternalVaultRef(null)
+/** Forget one picked folder without touching its contents. Accepts an
+ *  external root token; the bare legacy token means the current folder. */
+export function forgetExternalVault(root: string = EXTERNAL_VAULT_ROOT): void {
+  const bookmark = externalBookmarkFromRoot(root)
+  if (bookmark) removeExternalVaultRef(bookmark)
+  else if (root === EXTERNAL_VAULT_ROOT) setExternalVaultRef(null)
 }
 
 /** Move a vault between the on-device and iCloud tiers (setUbiquitous under
@@ -409,6 +437,9 @@ async function openVaultByName(name: string, cloudRootUri: string | null = null)
  * unavailable (signed out) rather than blocking the app.
  */
 export async function bootVault(): Promise<void> {
+  // Resolve where local vaults live before anything touches the tier —
+  // devices without usable app-external storage fall back to internal.
+  await initVaultsRoot()
   // A remembered remote workspace wins; unreachable servers fall through to
   // the local tiers so launch never blocks on the network.
   if (await restoreRemoteAtBoot()) return
@@ -842,11 +873,13 @@ export const mobileBridge: ZenBridge = {
     // named vault in the iCloud container, and the external token reopens
     // the bookmarked Files-app folder. Either way leaves remote mode.
     await disconnectRemote()
-    if (root === EXTERNAL_VAULT_ROOT) {
-      const external = await resolveExternalVault()
+    const externalBookmark = externalBookmarkFromRoot(root)
+    if (externalBookmark !== null || root === EXTERNAL_VAULT_ROOT) {
+      const external = await resolveExternalVault(externalBookmark ?? undefined)
       if (!external) {
         throw new Error('That folder could not be opened. Pick it again with Choose Folder.')
       }
+      setExternalVaultRef({ name: external.name, bookmark: external.bookmark })
       setStoragePref('external')
       return await openVaultByName(external.name, external.url)
     }

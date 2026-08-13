@@ -10,14 +10,16 @@
  */
 import { App as CapApp } from '@capacitor/app'
 import { Keyboard, KeyboardResize } from '@capacitor/keyboard'
-import { renderZenNotesApp } from '@zennotes/app-core/main'
+import { renderZenNotesApp, requestCloudAutoSync } from '@zennotes/app-core/main'
 import {
   installMobileBridge,
+  loadNativeAppVersion,
   bootVault,
   activeVault,
   importPendingShares
 } from './bridge/mobile-bridge'
 import { ensureDownloaded } from './bridge/icloud'
+import { configureMobileCloudAuth } from './bridge/mobile-cloud-auth'
 import { maybeRunFirstRunOnboarding } from './ui-mobile/Onboarding'
 import { mountMobileShell } from './ui-mobile/MobileShell'
 import './ui-mobile/mobile.css'
@@ -72,15 +74,18 @@ function wireForegroundRescan(): void {
       }
       await importPendingShares().catch(() => 0)
       try {
-        void activeVault().rescan()
+        await activeVault().rescan()
       } catch {
         // no vault open yet
       }
+      requestCloudAutoSync('foreground')
     })()
   }).catch(() => {})
 }
 
 async function boot(): Promise<void> {
+  const appVersion = await loadNativeAppVersion()
+  await configureMobileCloudAuth(appVersion)
   installMobileBridge()
   wireKeyboard()
   wireForegroundRescan()

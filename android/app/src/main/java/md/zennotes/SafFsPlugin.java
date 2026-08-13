@@ -252,6 +252,22 @@ public class SafFsPlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void readBase64(PluginCall call) {
+        Uri tree = requireTree(call);
+        if (tree == null) return;
+        try {
+            String rel = clean(call.getString("path"));
+            Entry e = resolve(tree, rel);
+            if (e == null || e.isDir) throw new FileNotFoundException(rel);
+            JSObject ret = new JSObject();
+            ret.put("data", Base64.encodeToString(readAll(docUri(tree, e.docId)), Base64.NO_WRAP));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("readBase64 failed: " + e.getMessage());
+        }
+    }
+
     private byte[] readAll(Uri doc) throws Exception {
         try (InputStream in = resolver().openInputStream(doc)) {
             if (in == null) throw new FileNotFoundException(doc.toString());

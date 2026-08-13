@@ -1,7 +1,7 @@
 {
   "name": "zennotes-android",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.1",
   "type": "module",
   "description": "ZenNotes for Android — Capacitor shell over the ZenNotes app core",
   "homepage": "https://zennotes.org",
@@ -14,6 +14,7 @@
     "android": "vite build && cap sync android && cap open android"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "7.1.6",
     "@capacitor/android": "^7.4.2",
     "@capacitor/app": "^7.0.1",
     "@capacitor/clipboard": "^7.0.1",

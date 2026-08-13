@@ -45,6 +45,7 @@ const SafFs = registerPlugin<{
     path: string
   }): Promise<{ type: string; size: number; mtime: number; uri: string }>
   readText(o: { root: string; path: string }): Promise<{ data: string }>
+  readBase64(o: { root: string; path: string }): Promise<{ data: string }>
   writeText(o: { root: string; path: string; data: string }): Promise<void>
   writeBase64(o: { root: string; path: string; data: string }): Promise<void>
   mkdir(o: { root: string; path: string }): Promise<void>
@@ -172,6 +173,17 @@ export class NativeFs {
     }
     const res = await Filesystem.readFile({ ...this.loc(relPath), encoding: Encoding.UTF8 })
     return typeof res.data === 'string' ? res.data : await res.data.text()
+  }
+
+  /** Read any file as base64 so sync hashes the exact bytes, including text. */
+  async readBase64(relPath: string): Promise<string> {
+    if (this.saf) {
+      const { data } = await SafFs.readBase64({ root: this.cloudRootUri!, path: relPath })
+      return data
+    }
+    const res = await Filesystem.readFile(this.loc(relPath))
+    if (typeof res.data === 'string') return res.data
+    return bytesToBase64(new Uint8Array(await res.data.arrayBuffer()))
   }
 
   async readTextOrNull(relPath: string): Promise<string | null> {
@@ -342,4 +354,13 @@ export async function listVaultDirs(): Promise<{ name: string; mtime: number }[]
   } catch {
     return []
   }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunkSize = 32_768
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+  }
+  return btoa(binary)
 }

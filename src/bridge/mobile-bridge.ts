@@ -10,6 +10,7 @@
  * mobile behavior without modifying the zennotes repo.
  */
 import { registerPlugin } from '@capacitor/core'
+import { App as CapApp } from '@capacitor/app'
 import { Clipboard } from '@capacitor/clipboard'
 import {
   installZenBridge,
@@ -74,6 +75,34 @@ import {
 import { emitVaultChange, onVaultChange, onOpenNoteRequested, requestOpenNote } from './events'
 import { renderTikzOnDevice } from './tikz'
 import { fetchLinkMetadataOnDevice } from './link-metadata'
+import {
+  connectMobileCloudAccount,
+  getMobileCloudAccountStatus,
+  getMobileCloudServiceAccount,
+  listMobileCloudPublishedNotes,
+  listMobileCloudVaults,
+  logoutMobileCloudAccount,
+  onMobileCloudAccountChange,
+  publishMobileCloudNote,
+  unpublishMobileCloudNote,
+  updateMobileCloudPublishedNote
+} from './mobile-cloud-auth'
+import {
+  createAndLinkMobileCloudVault,
+  createMobileCloudBackup,
+  deleteMobileCloudBackup,
+  downloadMobileCloudBackup,
+  getMobileCloudBackupSchedule,
+  getMobileCloudVaultLink,
+  linkMobileCloudVault,
+  listMobileCloudBackupItems,
+  listMobileCloudBackups,
+  restoreMobileCloudBackup,
+  restoreMobileCloudBackupNote,
+  syncMobileCloudVault,
+  updateMobileCloudBackupSchedule,
+  unlinkMobileCloudVault
+} from './mobile-cloud-sync'
 import { RemoteVault } from './remote-vault'
 import {
   activeRemote,
@@ -90,7 +119,17 @@ import {
 } from './remote-workspace'
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 
-const APP_VERSION = '1.0.0'
+let appVersion = '1.1.1'
+
+export async function loadNativeAppVersion(): Promise<string> {
+  try {
+    const info = await CapApp.getInfo()
+    if (info.version) appVersion = info.version
+  } catch {
+    // No native layer (browser dev server) — keep the package fallback.
+  }
+  return appVersion
+}
 const CURRENT_VAULT_KEY = 'zn-mobile:current-vault'
 const DEFAULT_VAULT_NAME = 'My Vault'
 export const VAULT_ROOT_PREFIX = 'zn://vaults/'
@@ -283,6 +322,7 @@ const MOBILE_CAPABILITIES: ZenCapabilities = {
   // hidden (they also gate on runtime === 'desktop'); the mobile shell owns
   // the connect flow via the store's actions, which gate on this flag alone.
   supportsRemoteWorkspace: true,
+  supportsCloudSync: true,
   supportsCliInstall: false,
   supportsCustomTemplates: true,
   // TextMate grammar import is a desktop feature for now: grammars are
@@ -291,13 +331,15 @@ const MOBILE_CAPABILITIES: ZenCapabilities = {
   supportsCustomCodeLanguages: false
 }
 
-const MOBILE_APP_INFO: ZenAppInfo = {
-  name: 'zennotes-android',
-  productName: 'ZenNotes',
-  version: APP_VERSION,
-  description: 'ZenNotes for Android',
-  homepage: 'https://zennotes.org',
-  runtime: 'web'
+function mobileAppInfo(): ZenAppInfo {
+  return {
+    name: 'zennotes-android',
+    productName: 'ZenNotes',
+    version: appVersion,
+    description: 'ZenNotes for Android',
+    homepage: 'https://zennotes.org',
+    runtime: 'web'
+  }
 }
 
 let vault: MobileVault | null = null
@@ -311,6 +353,14 @@ export function activeVault(): MobileVault | RemoteVault {
   if (remote) return remote.vault
   if (!vault) throw new Error('No vault is open')
   return vault
+}
+
+function activeMobileVault(): MobileVault {
+  const current = activeVault()
+  if (!(current instanceof MobileVault)) {
+    throw new Error('ZenNotes Cloud sync is available for on-device vaults only.')
+  }
+  return current
 }
 
 function vaultNameFromRoot(root: string): string {
@@ -590,6 +640,16 @@ function resolveVaultAssetUrl(_vaultRoot: string, assetPath: string): string | n
   return vault?.fs.fileSrc(normalized) ?? null
 }
 
+async function readVaultAssetBase64(assetPath: string): Promise<string> {
+  const normalized = posixNormalize(assetPath.trim().replace(/^\/+/, ''))
+  if (!normalized || normalized.startsWith('../') || normalized === '..') {
+    throw new Error('Asset path is invalid.')
+  }
+  const remote = activeRemote()
+  if (remote) return (await remote.client.fetchAssetBase64(normalized)).base64
+  return await activeMobileVault().fs.readBase64(normalized)
+}
+
 // --------------------------------------------------------------------
 // Dropped-file token bucket (mirrors the web bridge)
 // --------------------------------------------------------------------
@@ -624,7 +684,7 @@ function notImplemented(name: string): never {
 
 const unsupportedUpdateState: AppUpdateState = {
   phase: 'unsupported',
-  currentVersion: APP_VERSION,
+  currentVersion: appVersion,
   availableVersion: null,
   releaseName: null,
   releaseDate: null,
@@ -666,7 +726,7 @@ const MOBILE_RAYCAST_STATUS: RaycastExtensionStatus = {
   nodeMeetsMinimum: false,
   npmMeetsMinimum: false,
   installedVersion: null,
-  bundledVersion: APP_VERSION,
+  bundledVersion: appVersion,
   lastInstalledAt: null
 }
 
@@ -676,7 +736,7 @@ const MOBILE_RAYCAST_STATUS: RaycastExtensionStatus = {
 
 export const mobileBridge: ZenBridge = {
   getCapabilities: (): ZenCapabilities => MOBILE_CAPABILITIES,
-  getAppInfo: (): ZenAppInfo => MOBILE_APP_INFO,
+  getAppInfo: (): ZenAppInfo => mobileAppInfo(),
 
   // 'linux' gives app-core Ctrl-based keymaps and hides the Mac-only chrome —
   // the right defaults for Android hardware keyboards.
@@ -703,6 +763,35 @@ export const mobileBridge: ZenBridge = {
   checkForAppUpdatesWithUi: async () => {},
   downloadAppUpdate: async () => unsupportedUpdateState,
   installAppUpdate: async () => {},
+
+  getCloudAccountStatus: getMobileCloudAccountStatus,
+  connectCloudAccount: connectMobileCloudAccount,
+  logoutCloudAccount: logoutMobileCloudAccount,
+  onCloudAccountChange: onMobileCloudAccountChange,
+  getCloudServiceAccount: getMobileCloudServiceAccount,
+  listCloudPublishedNotes: listMobileCloudPublishedNotes,
+  publishCloudNote: publishMobileCloudNote,
+  updateCloudPublishedNote: updateMobileCloudPublishedNote,
+  unpublishCloudNote: unpublishMobileCloudNote,
+  listCloudVaults: listMobileCloudVaults,
+  getCloudVaultLink: () => getMobileCloudVaultLink(activeMobileVault()),
+  linkCloudVault: (vaultId) => linkMobileCloudVault(activeMobileVault(), vaultId),
+  createAndLinkCloudVault: (name) =>
+    createAndLinkMobileCloudVault(activeMobileVault(), name),
+  unlinkCloudVault: () => unlinkMobileCloudVault(activeMobileVault()),
+  syncCloudVault: () => syncMobileCloudVault(activeMobileVault()),
+  listCloudBackups: () => listMobileCloudBackups(activeMobileVault()),
+  getCloudBackupSchedule: () => getMobileCloudBackupSchedule(activeMobileVault()),
+  updateCloudBackupSchedule: (enabled) =>
+    updateMobileCloudBackupSchedule(activeMobileVault(), enabled),
+  listCloudBackupItems: (backupId) =>
+    listMobileCloudBackupItems(activeMobileVault(), backupId),
+  createCloudBackup: (label) => createMobileCloudBackup(activeMobileVault(), label),
+  downloadCloudBackup: (backupId) => downloadMobileCloudBackup(activeMobileVault(), backupId),
+  deleteCloudBackup: (backupId) => deleteMobileCloudBackup(activeMobileVault(), backupId),
+  restoreCloudBackup: (backupId) => restoreMobileCloudBackup(activeMobileVault(), backupId),
+  restoreCloudBackupNote: (backupId, snapshotItemId) =>
+    restoreMobileCloudBackupNote(activeMobileVault(), backupId, snapshotItemId),
 
   getServerCapabilities: async (): Promise<ServerCapabilities | null> =>
     activeRemote()?.capabilities ?? null,
@@ -919,6 +1008,7 @@ export const mobileBridge: ZenBridge = {
   // External file links name OS paths outside the iOS sandbox; the exact
   // 'desktop-only' token makes app-core show its friendly toast.
   openExternalFile: async () => ({ ok: false, error: 'desktop-only' }),
+  openAssetExternally: async () => notImplemented('openAssetExternally'),
   // Bookmark cards fetch open-graph metadata natively (link-metadata.ts) —
   // a WKWebView fetch of an arbitrary page would be CORS-blocked.
   fetchLinkMetadata: (url) => fetchLinkMetadataOnDevice(url),
@@ -926,6 +1016,7 @@ export const mobileBridge: ZenBridge = {
     activeVault().moveNote(relPath, targetFolder, targetSubpath),
   importFilesToNote,
   importPastedImage: (input) => activeVault().importPastedImage(input),
+  readVaultAssetBase64,
   renameAsset: (relPath, nextName): Promise<AssetMeta> =>
     activeVault().renameAsset(relPath, nextName),
   moveAsset: (relPath, targetDir): Promise<AssetMeta> =>

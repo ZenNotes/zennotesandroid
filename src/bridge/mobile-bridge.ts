@@ -121,7 +121,7 @@ import {
 } from './remote-workspace'
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 
-let appVersion = '1.1.4'
+let appVersion = '1.1.5'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {

@@ -6,8 +6,7 @@ const config: CapacitorConfig = {
   appName: 'ZenNotes',
   webDir: 'dist',
   android: {
-    backgroundColor: '#1d2021',
-    adjustMarginsForEdgeToEdge: 'auto'
+    backgroundColor: '#1d2021'
   },
   plugins: {
     Keyboard: {

@@ -882,11 +882,15 @@ function useTagsEmptyStateHint(): void {
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
         for (const node of m.addedNodes) {
-          if (node instanceof HTMLElement) apply(node)
+          const element = node instanceof HTMLElement ? node : node.parentElement
+          if (element) apply(element)
+        }
+        if (m.type === 'characterData' && m.target.parentElement) {
+          apply(m.target.parentElement)
         }
       }
     })
-    observer.observe(document.body, { childList: true, subtree: true })
+    observer.observe(document.body, { childList: true, characterData: true, subtree: true })
     // Re-scan the document only when the derived tagged/tagless state changes;
     // unrelated store updates and ordinary keystrokes never query the DOM.
     const unsub = useStore.subscribe((state) => {

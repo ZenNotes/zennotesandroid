@@ -824,6 +824,16 @@
     color: rgb(var(--z-grey-1));
   }
 
+  /* Inline "New folder" row (Discord feedback): folders were invisible until
+     one existed — the only entry point was buried in the ⊕ Create sheet, and
+     that one can't create nested folders. Muted so it reads as an action,
+     not content. */
+  .zn-mobile-drawer-group > button.zn-mobile-drawer-newfolder {
+    color: rgb(var(--z-grey-1));
+    font-size: 0.9375rem;
+    min-height: 42px;
+  }
+
   .zn-mobile-drawer-footer {
     display: flex;
     gap: 0.25rem;

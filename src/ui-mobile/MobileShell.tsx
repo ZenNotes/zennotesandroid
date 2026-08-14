@@ -824,6 +824,57 @@ function usePlaceholderCleanup(): void {
 }
 
 /**
+ * The Tags view's empty state ("Pick one or more tags above…") assumes tags
+ * exist. On a vault with none it teaches nothing — a Discord report read it
+ * as "tags can only be searched". App-core is consumed read-only, so patch
+ * the copy in the DOM the way usePlaceholderCleanup patches placeholders;
+ * if upstream ever rewords the string this quietly becomes a no-op.
+ */
+const TAGS_EMPTY_STOCK = 'Pick one or more tags above to see matching notes.'
+const TAGS_EMPTY_TEACH =
+  'No tags yet. Create one by typing # in any note — try #ideas. Every tag you write shows up here.'
+
+function useTagsEmptyStateHint(): void {
+  useEffect(() => {
+    // notes === [] means the vault scan hasn't landed yet — indistinguishable
+    // from "no tags", so treat it as loading and do nothing (the boot-restored
+    // Tags view mounts before the first rescan finishes).
+    const vaultState = (): 'loading' | 'tagless' | 'tagged' => {
+      const notes = useStore.getState().notes
+      if (notes.length === 0) return 'loading'
+      return notes.some((n) => n.folder !== 'trash' && n.tags.length > 0) ? 'tagged' : 'tagless'
+    }
+    const apply = (root: ParentNode): void => {
+      const state = vaultState()
+      if (state === 'loading') return
+      const [from, to] =
+        state === 'tagless' ? [TAGS_EMPTY_STOCK, TAGS_EMPTY_TEACH] : [TAGS_EMPTY_TEACH, TAGS_EMPTY_STOCK]
+      for (const el of root.querySelectorAll<HTMLElement>('div')) {
+        if (el.childElementCount === 0 && el.textContent === from) {
+          el.textContent = to
+        }
+      }
+    }
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node instanceof HTMLElement) apply(node)
+        }
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    // Tag counts change without DOM churn near the empty-state div, so also
+    // re-apply on store updates (cheap: a few querySelector calls).
+    const unsub = useStore.subscribe(() => apply(document))
+    apply(document)
+    return () => {
+      observer.disconnect()
+      unsub()
+    }
+  }, [])
+}
+
+/**
  * Edge-swipe drawer gestures (spec 07): swipe right from the left screen edge
  * to open the sidebar drawer; swipe left anywhere on the open drawer to close
  * it. Edge-start only, so editor text selection and horizontal scrollers
@@ -1961,6 +2012,7 @@ function MobileShellRoot(): React.JSX.Element {
   useBreadcrumbDrawerNav()
   useLongPressContextMenu()
   usePlaceholderCleanup()
+  useTagsEmptyStateHint()
   useEdgeSwipeDrawer()
   useRightPanelCloseButton()
   useCalendarWeekMode()

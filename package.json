@@ -1,13 +1,14 @@
 {
   "name": "zennotes-android",
   "private": true,
-  "version": "1.1.5",
+  "version": "1.1.6",
   "type": "module",
   "description": "ZenNotes for Android \u2014 Capacitor shell over the ZenNotes app core",
   "homepage": "https://zennotes.org",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "node --test src/ui-mobile/tags-empty-state.test.ts",
     "typecheck": "tsc --noEmit",
     "sync": "vite build && cap sync android && git -C ../../opensource/zennotes rev-parse HEAD > .zennotes-commit",
     "upstream": "sh tooling/upstream-check.sh",

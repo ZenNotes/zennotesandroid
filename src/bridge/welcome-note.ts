@@ -32,6 +32,12 @@ The small circle in the bottom corner is how you get around. Tap it:
 
 Every note is a plain Markdown file — **bold**, *italic*, lists, and checkboxes are all simple text. No database, no lock-in. Your notes stay readable anywhere, forever.
 
+## Organize with tags and folders
+
+Type \`#\` in any note to tag it — like #ideas on this one. Tags appear under **Browse → Tags** the moment you write them.
+
+Folders work the way you expect: create one in **Browse → New folder**, and move any note with the circle → **More** → **Move to…**.
+
 ## Math that renders live
 
 KaTeX equations, straight from plain markdown. Inline math like $e^{i\\pi} + 1 = 0$ or $A = \\pi r^2$ renders as you write, and display blocks get room to breathe:

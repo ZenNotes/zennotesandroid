@@ -11,6 +11,8 @@ import { useStore } from '@zennotes/app-core/store'
 import type { NoteSortOrder } from '@zennotes/app-core/store'
 import { naturalCompare } from '@zennotes/app-core/lib/natural-sort'
 import { confirmApp } from '@zennotes/app-core/lib/confirm-requests'
+import { promptApp } from '@zennotes/app-core/lib/prompt-requests'
+import { buildMoveNotePrompt, parseMoveNoteTarget } from '@zennotes/app-core/lib/move-note'
 import { notePathWithinFolder } from '@zennotes/app-core/lib/vault-layout'
 import { resolveFolderPath } from '@zennotes/shared-domain/system-folder-paths'
 import {
@@ -71,6 +73,10 @@ const D = {
     'M12 8c4.97 0 9-1.34 9-3s-4.03-3-9-3-9 1.34-9 3 4.03 3 9 3zM3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3',
   sort: 'M4 6h16M4 12h10M4 18h5',
   check: 'M20 6L9 17l-5-5',
+  folderPlus: 'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7zM12 11v6M9 14h6',
+  move: 'M5 8V6a2 2 0 012-2h3l2 2h7a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2v-4M2 13h9m0 0l-3-3m3 3l-3 3',
+  rename: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z',
+  link: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71',
   files:
     'M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM8.5 10a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM21 15l-5-5L5 21',
   cloud: 'M17.5 19a4.5 4.5 0 001.03-8.88 6 6 0 00-11.77 1.13A3.75 3.75 0 007.25 19h10.25z',
@@ -949,6 +955,88 @@ function MobileDrawerBody(props: {
   } = props
   const lp = useLongPress()
   const [sortOpen, setSortOpen] = useState(false)
+  // Long-pressing a row opens its action sheet — the phone's right-click
+  // (Discord folder feedback). Notes mirror the ••• sheet's actions; folders
+  // get Rename/Delete. Prompts overlay the open drawer (Modal layers above
+  // z-49), so the drawer stays put and its list refreshes in place via the
+  // vault change events.
+  const [noteMenu, setNoteMenu] = useState<{ path: string; title: string } | null>(null)
+  const [folderMenu, setFolderMenu] = useState<{ subpath: string; name: string } | null>(null)
+
+  const moveNoteFromDrawer = (notePath: string): void => {
+    setNoteMenu(null)
+    void (async () => {
+      const st = s()
+      const meta = st.notes.find((n) => n.path === notePath)
+      if (!meta) return
+      const target = await promptApp(buildMoveNotePrompt(meta, st.folders))
+      if (!target) return
+      const dest = parseMoveNoteTarget(target)
+      await s().moveNote(meta.path, dest.folder, dest.subpath)
+    })()
+  }
+
+  const renameNoteFromDrawer = (notePath: string, title: string): void => {
+    setNoteMenu(null)
+    void (async () => {
+      const next = await promptApp({
+        title: 'Rename note',
+        initialValue: title,
+        okLabel: 'Rename',
+        validate: (v: string) => (/[\\/]/.test(v) ? 'Title cannot contain / or \\' : null)
+      })
+      if (!next || next === title) return
+      await s().renameNote(notePath, next)
+    })()
+  }
+
+  const archiveNoteFromDrawer = (notePath: string): void => {
+    setNoteMenu(null)
+    void (async () => {
+      if (!(await s().confirmArchiveNotes([notePath]))) return
+      await window.zen.archiveNote(notePath)
+    })()
+  }
+
+  const copyWikilinkFromDrawer = (title: string): void => {
+    setNoteMenu(null)
+    void navigator.clipboard.writeText(`[[${title}]]`).catch(() => {})
+  }
+
+  const renameFolderFromDrawer = (subpath: string, name: string): void => {
+    setFolderMenu(null)
+    void (async () => {
+      const next = await promptApp({
+        title: 'Rename folder',
+        initialValue: name,
+        okLabel: 'Rename',
+        validate: (v: string) => (v.includes('/') ? 'Folder name cannot contain "/"' : null)
+      })
+      const clean = next?.trim()
+      if (!clean || clean === name) return
+      const parent = subpath.includes('/') ? subpath.slice(0, subpath.lastIndexOf('/')) : ''
+      try {
+        await s().renameFolder('inbox', subpath, parent ? `${parent}/${clean}` : clean)
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : String(err))
+      }
+    })()
+  }
+
+  const newFolderHere = (): void => {
+    void (async () => {
+      const leaf = path === '' ? '' : (path.split('/').pop() ?? '')
+      const name = await promptApp({
+        title: leaf ? `New folder in ${leaf}` : 'New folder',
+        placeholder: 'Folder name',
+        okLabel: 'Create',
+        validate: (v: string) => (v.includes('/') ? 'Folder name cannot contain "/"' : null)
+      })
+      const clean = name?.trim().replace(/^\/+|\/+$/g, '')
+      if (!clean) return
+      await s().createFolder('inbox', path === '' ? clean : `${path}/${clean}`)
+    })()
+  }
 
   const trashNote = (notePath: string, title: string): void => {
     void (async () => {
@@ -1116,7 +1204,7 @@ function MobileDrawerBody(props: {
                 key={subpath}
                 type="button"
                 onClick={() => setPath(subpath)}
-                {...lp(() => deleteFolder(subpath, name))}
+                {...lp(() => setFolderMenu({ subpath, name }))}
               >
                 <Icon d={dateDirs.has(subpath) ? D.calendar : D.folder} />
                 <span className="zn-truncate">{name}</span>
@@ -1139,7 +1227,7 @@ function MobileDrawerBody(props: {
                 key={n.path}
                 type="button"
                 onClick={() => go(() => s().selectNote(n.path))}
-                {...lp(() => trashNote(n.path, n.title))}
+                {...lp(() => setNoteMenu({ path: n.path, title: n.title }))}
               >
                 <Icon d={D.note} />
                 <span className="zn-truncate">{n.title}</span>
@@ -1148,8 +1236,114 @@ function MobileDrawerBody(props: {
             {childFolders.length === 0 && childDatabases.length === 0 && childNotes.length === 0 && (
               <div className="zn-mobile-drawer-empty">No notes here yet</div>
             )}
+            <button
+              type="button"
+              className="zn-mobile-drawer-newfolder"
+              onClick={newFolderHere}
+            >
+              <Icon d={D.folderPlus} />
+              New folder
+            </button>
           </div>
         </div>
+
+        {noteMenu && (
+          <>
+            <div
+              className="zn-mobile-sheet-backdrop"
+              onClick={() => setNoteMenu(null)}
+              role="presentation"
+            />
+            <div className="zn-mobile-sheet" role="menu" aria-label="Note actions">
+              <div className="zn-mobile-sheet-title zn-truncate">{noteMenu.title}</div>
+              <div className="zn-mobile-sheet-scroll">
+                <div className="zn-mobile-sheet-group">
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row"
+                    onClick={() => renameNoteFromDrawer(noteMenu.path, noteMenu.title)}
+                  >
+                    <Icon d={D.rename} />
+                    Rename
+                  </button>
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row"
+                    onClick={() => moveNoteFromDrawer(noteMenu.path)}
+                  >
+                    <Icon d={D.move} />
+                    Move to…
+                  </button>
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row"
+                    onClick={() => copyWikilinkFromDrawer(noteMenu.title)}
+                  >
+                    <Icon d={D.link} />
+                    Copy wikilink
+                  </button>
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row"
+                    onClick={() => archiveNoteFromDrawer(noteMenu.path)}
+                  >
+                    <Icon d={D.archive} />
+                    Archive
+                  </button>
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row zn-danger"
+                    onClick={() => {
+                      const { path: p, title } = noteMenu
+                      setNoteMenu(null)
+                      trashNote(p, title)
+                    }}
+                  >
+                    <Icon d={D.trash} />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {folderMenu && (
+          <>
+            <div
+              className="zn-mobile-sheet-backdrop"
+              onClick={() => setFolderMenu(null)}
+              role="presentation"
+            />
+            <div className="zn-mobile-sheet" role="menu" aria-label="Folder actions">
+              <div className="zn-mobile-sheet-title zn-truncate">{folderMenu.name}</div>
+              <div className="zn-mobile-sheet-scroll">
+                <div className="zn-mobile-sheet-group">
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row"
+                    onClick={() => renameFolderFromDrawer(folderMenu.subpath, folderMenu.name)}
+                  >
+                    <Icon d={D.rename} />
+                    Rename
+                  </button>
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row zn-danger"
+                    onClick={() => {
+                      const { subpath, name } = folderMenu
+                      setFolderMenu(null)
+                      deleteFolder(subpath, name)
+                    }}
+                  >
+                    <Icon d={D.trash} />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="zn-mobile-drawer-footer">
           <button type="button" onClick={() => go(() => s().setSettingsOpen(true))}>

@@ -122,6 +122,13 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   also blurs the editor before `Keyboard.hide()` — Android's hide is
   `hideSoftInputFromWindow` only (no `endEditing`-style focus resign like
   iOS), and a still-focused editor re-summons the keyboard.
+- **Folders/tags discoverability pass** (Discord feedback, 2026-08-14):
+  inline "New folder" row at every drawer level (also the only way to create
+  NESTED folders on a phone), note long-press → Move to…/Delete action sheet
+  in the drawer, a teaching Tags empty state (DOM patch — app-core is
+  read-only), and an "Organize with tags and folders" welcome-note section
+  whose inline #ideas seeds the Tags view. This pass is kept in parity with
+  the iPhone shell.
 - **TikZ** capability-gated off; workflows not offered; custom TextMate
   languages gated off; vim mode defaults off on first run — all as on iOS.
 - **Desktop 2.21/2.22 features** arrive via shared source, same as the iOS

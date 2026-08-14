@@ -121,7 +121,7 @@ import {
 } from './remote-workspace'
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 
-let appVersion = '1.1.5'
+let appVersion = '1.1.6'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {
@@ -371,6 +371,7 @@ function mobileAppInfo(): ZenAppInfo {
 }
 
 let vault: MobileVault | null = null
+let indexedVault: MobileVault | RemoteVault | null = null
 
 function isPhoneViewport(): boolean {
   return window.innerWidth < 768
@@ -417,6 +418,27 @@ function currentVaultInfo(): VaultInfo | null {
   if (remote) return remote
   if (!vault) return null
   return { root: friendlyVaultRoot(vault), name: vault.name }
+}
+
+/** Whether app-core's note-index request has completed for the active vault. */
+export function isMobileNoteIndexReady(): boolean {
+  if (!indexedVault) return false
+  try {
+    return activeVault() === indexedVault
+  } catch {
+    return false
+  }
+}
+
+async function listNotesForActiveVault(): Promise<NoteMeta[]> {
+  const source = activeVault()
+  const notes = await source.listNotes()
+  try {
+    if (activeVault() === source) indexedVault = source
+  } catch {
+    // The vault closed while its listing was in flight; do not mark it ready.
+  }
+  return notes
 }
 
 async function openVaultByName(name: string, cloudRootUri: string | null = null): Promise<VaultInfo> {
@@ -941,7 +963,7 @@ export const mobileBridge: ZenBridge = {
   writeWorkspaceState: (json) => activeVault().writeWorkspaceState(json),
   rootContentHiddenByInboxMode: () => activeVault().rootContentHiddenByInboxMode(),
 
-  listNotes: () => activeVault().listNotes(),
+  listNotes: listNotesForActiveVault,
   listFolders: () => activeVault().listFolders(),
   listAssets: () => activeVault().listAssets(),
   hasAssetsDir: () => activeVault().hasAssetsDir(),

@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "node --test src/ui-mobile/tags-empty-state.test.ts",
     "typecheck": "tsc --noEmit",
     "sync": "vite build && cap sync android && git -C ../../opensource/zennotes rev-parse HEAD > .zennotes-commit",
     "upstream": "sh tooling/upstream-check.sh",

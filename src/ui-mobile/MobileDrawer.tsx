@@ -1015,7 +1015,11 @@ function MobileDrawerBody(props: {
       const clean = next?.trim()
       if (!clean || clean === name) return
       const parent = subpath.includes('/') ? subpath.slice(0, subpath.lastIndexOf('/')) : ''
-      await s().renameFolder('inbox', subpath, parent ? `${parent}/${clean}` : clean)
+      try {
+        await s().renameFolder('inbox', subpath, parent ? `${parent}/${clean}` : clean)
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : String(err))
+      }
     })()
   }
 

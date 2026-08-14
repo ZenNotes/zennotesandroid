@@ -34,18 +34,28 @@ import { MobileEditorToolbar } from './EditorToolbar'
 import { promptApp } from '@zennotes/app-core/lib/prompt-requests'
 import { confirmApp } from '@zennotes/app-core/lib/confirm-requests'
 import { notePathWithinFolder } from '@zennotes/app-core/lib/vault-layout'
+import { noteTagsForCount } from '@zennotes/app-core/lib/tags'
+import { resolveTypstPreambleFolder } from '@zennotes/app-core/lib/typst-preamble'
 import { csvPathFromDatabaseTab, formDirFromCsvPath } from '@zennotes/shared-domain/databases'
 import { MobileDrawer } from './MobileDrawer'
 import { isDrawerOpen, setDrawerOpen, useDrawerOpen } from './drawer-state'
 import { goHome } from './nav'
 import { useYouTubeLiteEmbeds } from './youtube-embed-shim'
 import { VaultsSheet, promptNewVault } from './MobileDrawer'
-import { listSwitchableVaults, type MobileVaultEntry } from '../bridge/mobile-bridge'
+import {
+  isMobileNoteIndexReady,
+  listSwitchableVaults,
+  type MobileVaultEntry
+} from '../bridge/mobile-bridge'
 import { closeMobileSheet, openMobileSheet, useMobileSheet } from './sheet-state'
 import { WELCOME_PENDING_KEY, FAB_HINT_KEY } from './Onboarding'
 import { WELCOME_NOTE_PATH } from '../bridge/welcome-note'
 import ensoUrl from '../assets/enso.png'
 import { getStoragePref } from '../bridge/icloud'
+import {
+  createTagsEmptyStateTracker,
+  type TagsEmptyStateSnapshot
+} from './tags-empty-state'
 
 const PHONE_BREAKPOINT = 768
 
@@ -834,25 +844,39 @@ const TAGS_EMPTY_STOCK = 'Pick one or more tags above to see matching notes.'
 const TAGS_EMPTY_TEACH =
   'No tags yet. Create one by typing # in any note — try #ideas. Every tag you write shows up here.'
 
+function tagsEmptyStateSnapshot(
+  state: ReturnType<typeof useStore.getState>
+): TagsEmptyStateSnapshot {
+  return {
+    vaultRoot: state.vault?.root ?? null,
+    notes: state.notes,
+    activeNote: state.activeNote,
+    preambleFolder: resolveTypstPreambleFolder(
+      state.vaultSettings?.typstPreambles?.folder
+    ),
+    indexReady: isMobileNoteIndexReady()
+  }
+}
+
 function useTagsEmptyStateHint(): void {
   useEffect(() => {
-    // notes === [] means the vault scan hasn't landed yet — indistinguishable
-    // from "no tags", so treat it as loading and do nothing (the boot-restored
-    // Tags view mounts before the first rescan finishes).
-    const vaultState = (): 'loading' | 'tagless' | 'tagged' => {
-      const notes = useStore.getState().notes
-      if (notes.length === 0) return 'loading'
-      return notes.some((n) => n.folder !== 'trash' && n.tags.length > 0) ? 'tagged' : 'tagless'
+    const tracker = createTagsEmptyStateTracker(
+      tagsEmptyStateSnapshot(useStore.getState()),
+      noteTagsForCount
+    )
+    const patch = (el: HTMLElement, from: string, to: string): void => {
+      if (el.tagName === 'DIV' && el.childElementCount === 0 && el.textContent === from) {
+        el.textContent = to
+      }
     }
     const apply = (root: ParentNode): void => {
-      const state = vaultState()
+      const state = tracker.getState()
       if (state === 'loading') return
       const [from, to] =
         state === 'tagless' ? [TAGS_EMPTY_STOCK, TAGS_EMPTY_TEACH] : [TAGS_EMPTY_TEACH, TAGS_EMPTY_STOCK]
+      if (root instanceof HTMLElement) patch(root, from, to)
       for (const el of root.querySelectorAll<HTMLElement>('div')) {
-        if (el.childElementCount === 0 && el.textContent === from) {
-          el.textContent = to
-        }
+        patch(el, from, to)
       }
     }
     const observer = new MutationObserver((mutations) => {
@@ -863,9 +887,11 @@ function useTagsEmptyStateHint(): void {
       }
     })
     observer.observe(document.body, { childList: true, subtree: true })
-    // Tag counts change without DOM churn near the empty-state div, so also
-    // re-apply on store updates (cheap: a few querySelector calls).
-    const unsub = useStore.subscribe(() => apply(document))
+    // Re-scan the document only when the derived tagged/tagless state changes;
+    // unrelated store updates and ordinary keystrokes never query the DOM.
+    const unsub = useStore.subscribe((state) => {
+      if (tracker.update(tagsEmptyStateSnapshot(state))) apply(document)
+    })
     apply(document)
     return () => {
       observer.disconnect()

@@ -127,8 +127,8 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   NESTED folders on a phone), note long-press → Move to…/Delete action sheet
   in the drawer, a teaching Tags empty state (DOM patch — app-core is
   read-only), and an "Organize with tags and folders" welcome-note section
-  whose inline #ideas seeds the Tags view. Ahead of the iPhone shell for
-  now — porting there is a known follow-up, same as the vault registry.
+  whose inline #ideas seeds the Tags view. This pass is kept in parity with
+  the iPhone shell.
 - **TikZ** capability-gated off; workflows not offered; custom TextMate
   languages gated off; vim mode defaults off on first run — all as on iOS.
 - **Desktop 2.21/2.22 features** arrive via shared source, same as the iOS

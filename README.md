@@ -144,7 +144,8 @@ cd android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 \
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Toolchain: JDK 21 + Android SDK 35 (Capacitor 7). `android/local.properties`
+Toolchain: JDK 21 + Android SDK 36 (Capacitor 8; targetSdk 36 required by
+Play from Aug 2026, minSdk 24 — Android 7.0+). `android/local.properties`
 points at the SDK. Dev loop against a browser (no emulator): `npm run dev` —
 Capacitor plugins are absent in a plain browser, so vault I/O won't work; use
 the emulator for real testing.

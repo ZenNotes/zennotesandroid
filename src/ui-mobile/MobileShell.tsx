@@ -56,11 +56,14 @@ import {
   createTagsEmptyStateTracker,
   type TagsEmptyStateSnapshot
 } from './tags-empty-state'
+import { isPhoneViewport } from '../viewport'
 
-const PHONE_BREAKPOINT = 768
-
+/**
+ * Phone-only behaviours gate on this. Smallest-side based, so rotating a phone
+ * into landscape no longer disables the whole mobile shell (issue #12).
+ */
 function isPhoneWidth(): boolean {
-  return window.innerWidth < PHONE_BREAKPOINT
+  return isPhoneViewport()
 }
 
 /** Run a command from the shared registry by id (same path the palette uses). */

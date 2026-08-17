@@ -22,6 +22,7 @@ import { ensureDownloaded } from './bridge/icloud'
 import { configureMobileCloudAuth } from './bridge/mobile-cloud-auth'
 import { maybeRunFirstRunOnboarding } from './ui-mobile/Onboarding'
 import { mountMobileShell } from './ui-mobile/MobileShell'
+import { isPhoneViewport, watchPhoneClass } from './viewport'
 import './ui-mobile/mobile.css'
 
 function wireKeyboard(): void {
@@ -29,9 +30,8 @@ function wireKeyboard(): void {
   // Tablets: hardware keyboards / the floating mini-keyboard still report a
   // "keyboard frame", and Native resize would shrink the WebView leaving a
   // black band where no keyboard is. Don't resize there — the toolbar lifts
-  // by --zn-kb-height in CSS instead (the zn-kb-noresize class gates that
-  // rule to this branch, so a phone rotated past the tablet media breakpoint
-  // never picks it up). Phones keep Native resize (the soft keyboard is the
+  // by --zn-kb-height in CSS instead, gated on the zn-kb-noresize class set
+  // below. Phones keep Native resize (the soft keyboard is the
   // norm and resizing keeps the caret visible); the toolbar docks with
   // bottom: 0 on the shrunk viewport — the keyboard's top edge. Unlike the
   // iPhone shell, nothing is computed from keyboardWillShow's geometry: on
@@ -39,10 +39,18 @@ function wireKeyboard(): void {
   // edge-to-edge WebView margin already excludes, and the plugin event races
   // the JS resize event, so any derived keyboard-top Y is unreliable
   // (issue #7's mid-screen toolbar).
-  if (window.innerWidth >= 768) {
-    html.classList.add('zn-kb-noresize')
-    void Keyboard.setResizeMode({ mode: KeyboardResize.None }).catch(() => {})
+  const applyResizeMode = (isPhone: boolean): void => {
+    html.classList.toggle('zn-kb-noresize', !isPhone)
+    void Keyboard.setResizeMode({
+      mode: isPhone ? KeyboardResize.Native : KeyboardResize.None
+    }).catch(() => {})
   }
+  // Phone-ness is smallestWidth-based, so rotating never flips it (issue #12);
+  // watchPhoneClass also publishes the same decision to CSS, so the resize mode
+  // and the rules that assume it can't drift apart the way the old
+  // innerWidth-at-boot check did.
+  watchPhoneClass(applyResizeMode)
+  applyResizeMode(isPhoneViewport())
   void Keyboard.addListener('keyboardWillShow', (info) => {
     html.classList.add('zn-kb-open')
     html.style.setProperty('--zn-kb-height', `${info.keyboardHeight}px`)

@@ -860,18 +860,27 @@
 .zn-phone .zn-swipe-content {
   position: relative;
   z-index: 1;
-  background: rgb(var(--z-bg-1));
+  /* MUST match .zn-mobile-drawer's paint exactly: any lighter token here
+     makes every swipeable row read as a selected/highlighted card at rest
+     (caught on the iOS port). The row still needs SOME solid paint so it
+     occludes the pin/action layers while it slides. */
+  background: rgb(var(--z-bg));
   will-change: transform;
 }
 
-.zn-phone .zn-swipe-content.is-settling {
+.zn-phone .zn-swipe.is-settling .zn-swipe-content,
+.zn-phone .zn-swipe.is-settling .zn-swipe-actions {
   transition: transform 180ms ease-out;
 }
 
+/* Above the row content: the buttons slide in OVER the row's right edge so
+   the title stays readable (the row itself only nudges by CONTENT_FOLLOW). */
 .zn-phone .zn-swipe-actions {
   position: absolute;
   inset: 0 0 0 auto;
   display: flex;
+  z-index: 2;
+  will-change: transform;
 }
 
 .zn-phone .zn-swipe-actions > button {

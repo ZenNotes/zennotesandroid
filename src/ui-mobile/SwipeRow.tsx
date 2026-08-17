@@ -21,6 +21,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 
 const ACTION_WIDTH = 72 // px per revealed action button
+// Leftward swipes move the row content by only a third of the gesture — the
+// action buttons slide in OVER the row's right edge instead, so the note
+// title stays readable while the actions are open (Adib, device testing:
+// full-width translation made the row "disappear" in the narrow drawer).
+const CONTENT_FOLLOW = 1 / 3
 const PIN_TRIGGER = 64 // px of right-swipe that commits a pin toggle
 const CLAIM = 10 // px of horizontal movement before the row claims the touch
 
@@ -142,15 +147,25 @@ export function SwipeRow(props: {
     }
   }
 
+  // The under/over-layers render only while the row is displaced, so resting
+  // rows are plain drawer rows. Rightward (pin) swipes move the content 1:1 to
+  // uncover the pin chip; leftward swipes move it by CONTENT_FOLLOW while the
+  // actions slide in over the right edge.
+  const engaged = dx !== 0 || settling || open
+  const contentX = dx >= 0 ? dx : dx * CONTENT_FOLLOW
+  const actionsX = Math.max(0, openWidth + Math.min(0, dx))
   return (
-    <div className="zn-swipe" data-zn-swipe ref={rowRef}>
+    <div className={`zn-swipe${settling ? ' is-settling' : ''}`} data-zn-swipe ref={rowRef}>
       <div className="zn-swipe-pin" aria-hidden="true" style={{ opacity: dx > 8 ? 1 : 0 }}>
         <span className={dx > PIN_TRIGGER ? 'is-armed' : ''}>
           {pinned ? 'Unpin' : 'Pin'}
         </span>
       </div>
-      {leftActions.length > 0 && (
-        <div className="zn-swipe-actions" style={{ width: openWidth }}>
+      {leftActions.length > 0 && engaged && (
+        <div
+          className="zn-swipe-actions"
+          style={{ width: openWidth, transform: `translateX(${actionsX}px)` }}
+        >
           {leftActions.map((a) => (
             <button
               key={a.label}
@@ -169,8 +184,8 @@ export function SwipeRow(props: {
         </div>
       )}
       <div
-        className={`zn-swipe-content${settling ? ' is-settling' : ''}`}
-        style={{ transform: `translateX(${dx}px)` }}
+        className="zn-swipe-content"
+        style={{ transform: `translateX(${contentX}px)` }}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}

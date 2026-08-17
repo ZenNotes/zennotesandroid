@@ -1977,6 +1977,23 @@
   z-index: 41;
 }
 
+/* app-core's floating format bubble (EditorSelectionToolbar) places itself
+   just above the selection, flipping below when there's no room — the SAME
+   preference Android's native selection toolbar uses, so the two stack on
+   top of each other whenever text is selected (issue #13, three devices).
+   The native toolbar's position is the OS's to choose; on phones the bubble
+   moves instead: docked to the bottom, just above the formatting toolbar —
+   a region the native menu never occupies because it hugs the selection.
+   Bottom-anchored, so the "Turn into" menu growth extends upward. The
+   !importants override the component's inline left/top; its inline
+   translateX(-50%) plus left:50% keeps it centered. */
+.zn-phone [data-selection-toolbar] {
+  top: auto !important;
+  left: 50% !important;
+  bottom: 54px;
+  max-width: calc(100vw - 16px);
+}
+
 /* Non-resizing keyboard mode (tablets — see wireKeyboard): the viewport
    keeps its full height, so lift the toolbar above the keyboard frame. */
 .zn-kb-noresize .zn-editor-toolbar {

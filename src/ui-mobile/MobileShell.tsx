@@ -56,6 +56,8 @@ import {
   createTagsEmptyStateTracker,
   type TagsEmptyStateSnapshot
 } from './tags-empty-state'
+import { siblingNotesInDrawerOrder } from './note-order'
+import { getPinnedNotes, loadPins } from './pins'
 import { isPhoneViewport } from '../viewport'
 
 /**
@@ -934,7 +936,10 @@ function useEdgeSwipeDrawer(): void {
         tracking = 'open'
       } else if (
         isDrawerOpen() &&
-        (e.target as HTMLElement | null)?.closest?.('.zn-mobile-drawer')
+        (e.target as HTMLElement | null)?.closest?.('.zn-mobile-drawer') &&
+        // Swipeable rows own their horizontal gestures (SwipeRow) — without
+        // this carve-out a left row-swipe would also close the drawer.
+        !(e.target as HTMLElement | null)?.closest?.('[data-zn-swipe]')
       ) {
         tracking = 'close'
       } else {
@@ -971,6 +976,171 @@ function useEdgeSwipeDrawer(): void {
       document.removeEventListener('touchstart', onTouchStart, { capture: true } as never)
       document.removeEventListener('touchmove', onTouchMove, { capture: true } as never)
       document.removeEventListener('touchend', onTouchEnd, { capture: true } as never)
+    }
+  }, [])
+}
+
+/**
+ * Swipe between notes: a fast horizontal flick over the note surface opens
+ * the previous (swipe right) or next (swipe left) note, in EXACTLY the order
+ * the Browse drawer shows for that folder (note-order.ts, pinned first).
+ *
+ * Deliberately strict about what counts as a flick — everything horizontal
+ * on this surface already means something else somewhere:
+ * - starts near a screen edge belong to the drawer gesture (and future
+ *   system back-gesture surfaces) — skipped;
+ * - anything inside a horizontally scrollable element (tables, code blocks,
+ *   kanban) that can still scroll in the flick direction is a scroll;
+ * - an active text selection means the user is adjusting it — never navigate;
+ * - slow drags are selections or hesitation, not flicks (max 400ms);
+ * - two-finger touches belong to pinch-to-resize.
+ *
+ * (Swipe-to-go-BACK was tried 2026-07-16 and reverted at Adib's request —
+ * this is prev/next within a folder, a different gesture, added with the
+ * rest of the gesture pass on 2026-08-17.)
+ */
+function useNoteSwipeNav(): void {
+  useEffect(() => {
+    if (!isPhoneWidth()) return
+    const EDGE = 40
+    const TRIGGER = 80
+    const VSLOP = 44
+    const MAX_MS = 400
+    let start: { x: number; y: number; t: number; target: EventTarget | null } | null = null
+
+    const horizontallyScrollableAncestor = (
+      el: HTMLElement | null,
+      dir: -1 | 1
+    ): boolean => {
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        if (n.scrollWidth > n.clientWidth + 1) {
+          const canLeft = n.scrollLeft > 0
+          const canRight = n.scrollLeft + n.clientWidth < n.scrollWidth - 1
+          if ((dir === 1 && canLeft) || (dir === -1 && canRight)) return true
+        }
+      }
+      return false
+    }
+
+    const onTouchStart = (e: TouchEvent): void => {
+      start = null
+      if (e.touches.length !== 1 || isDrawerOpen()) return
+      const t = e.touches[0]!
+      if (t.clientX < EDGE || t.clientX > window.innerWidth - EDGE) return
+      const target = e.target as HTMLElement | null
+      // Only over the note surface — not the toolbar, FAB, sheets, headers.
+      if (!target?.closest?.('.cm-editor, .prose-zen')) return
+      start = { x: t.clientX, y: t.clientY, t: Date.now(), target }
+    }
+
+    const onTouchEnd = (e: TouchEvent): void => {
+      const s0 = start
+      start = null
+      if (!s0 || e.changedTouches.length !== 1) return
+      if (Date.now() - s0.t > MAX_MS) return
+      const t = e.changedTouches[0]!
+      const dx = t.clientX - s0.x
+      const dy = Math.abs(t.clientY - s0.y)
+      if (Math.abs(dx) < TRIGGER || dy > VSLOP || dy > Math.abs(dx) / 2) return
+      const sel = window.getSelection()
+      if (sel && !sel.isCollapsed) return
+      const dir: -1 | 1 = dx < 0 ? -1 : 1
+      if (horizontallyScrollableAncestor(s0.target as HTMLElement | null, dir)) return
+
+      const state = useStore.getState()
+      const activePath = state.activeNote?.path
+      if (!activePath) return
+      const vaultRoot = state.vault?.root ?? null
+      const siblings = siblingNotesInDrawerOrder(
+        state,
+        activePath,
+        vaultRoot ? getPinnedNotes(vaultRoot) : []
+      )
+      if (!siblings || siblings.length < 2) return
+      const idx = siblings.findIndex((n) => n.path === activePath)
+      if (idx === -1) return
+      // Swipe left (dx<0) → next note; swipe right → previous. Stop at ends.
+      const next = siblings[idx + (dir === -1 ? 1 : -1)]
+      if (!next) return
+      void state.selectNote(next.path)
+    }
+
+    const onTouchMove = (e: TouchEvent): void => {
+      // A second finger arriving means pinch — abandon.
+      if (e.touches.length > 1) start = null
+    }
+
+    document.addEventListener('touchstart', onTouchStart, { passive: true, capture: true })
+    document.addEventListener('touchmove', onTouchMove, { passive: true, capture: true })
+    document.addEventListener('touchend', onTouchEnd, { passive: true, capture: true })
+    return () => {
+      document.removeEventListener('touchstart', onTouchStart, { capture: true } as never)
+      document.removeEventListener('touchmove', onTouchMove, { capture: true } as never)
+      document.removeEventListener('touchend', onTouchEnd, { capture: true } as never)
+    }
+  }, [])
+}
+
+/**
+ * Pinch to resize the editor font: two fingers over the note surface scale
+ * app-core's `editorFontSize` pref (12–28px), which already persists and
+ * applies to editor + preview. Steps are applied live during the pinch;
+ * touchmove is non-passive so the page doesn't scroll under the gesture
+ * (page zoom itself is off via user-scalable=no).
+ */
+function usePinchFontSize(): void {
+  useEffect(() => {
+    if (!isPhoneWidth()) return
+    const MIN = 12
+    const MAX = 28
+    let base: { dist: number; size: number } | null = null
+
+    const dist = (e: TouchEvent): number => {
+      const a = e.touches[0]!
+      const b = e.touches[1]!
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+    }
+
+    const overNote = (e: TouchEvent): boolean => {
+      for (const t of [e.touches[0]!, e.touches[1]!]) {
+        const el = document.elementFromPoint(t.clientX, t.clientY)
+        if (!el?.closest?.('.cm-editor, .prose-zen')) return false
+      }
+      return true
+    }
+
+    const onTouchStart = (e: TouchEvent): void => {
+      if (e.touches.length !== 2 || isDrawerOpen() || !overNote(e)) {
+        base = null
+        return
+      }
+      base = { dist: dist(e), size: useStore.getState().editorFontSize }
+    }
+
+    const onTouchMove = (e: TouchEvent): void => {
+      if (!base || e.touches.length !== 2) return
+      e.preventDefault()
+      const next = Math.max(
+        MIN,
+        Math.min(MAX, Math.round(base.size * (dist(e) / base.dist)))
+      )
+      const state = useStore.getState()
+      if (state.editorFontSize !== next) state.setEditorFontSize(next)
+    }
+
+    const onTouchEnd = (e: TouchEvent): void => {
+      if (e.touches.length < 2) base = null
+    }
+
+    document.addEventListener('touchstart', onTouchStart, { passive: true, capture: true })
+    document.addEventListener('touchmove', onTouchMove, { passive: false, capture: true })
+    document.addEventListener('touchend', onTouchEnd, { passive: true, capture: true })
+    document.addEventListener('touchcancel', onTouchEnd, { passive: true, capture: true })
+    return () => {
+      document.removeEventListener('touchstart', onTouchStart, { capture: true } as never)
+      document.removeEventListener('touchmove', onTouchMove, { capture: true } as never)
+      document.removeEventListener('touchend', onTouchEnd, { capture: true } as never)
+      document.removeEventListener('touchcancel', onTouchEnd, { capture: true } as never)
     }
   }, [])
 }
@@ -2047,6 +2217,8 @@ function MobileShellRoot(): React.JSX.Element {
   usePlaceholderCleanup()
   useTagsEmptyStateHint()
   useEdgeSwipeDrawer()
+  useNoteSwipeNav()
+  usePinchFontSize()
   useRightPanelCloseButton()
   useCalendarWeekMode()
   useDesktopCommandCleanup()
@@ -2071,6 +2243,9 @@ function MobileShellRoot(): React.JSX.Element {
 
 export function mountMobileShell(): void {
   document.documentElement.classList.add('zn-mobile')
+  // Pin state loads async from native Preferences; the drawer re-renders via
+  // the pins subscription when it lands.
+  void loadPins()
   const host = document.createElement('div')
   host.id = 'zn-mobile-shell'
   document.body.appendChild(host)

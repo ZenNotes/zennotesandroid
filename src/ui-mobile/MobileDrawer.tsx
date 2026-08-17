@@ -9,7 +9,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { useStore } from '@zennotes/app-core/store'
 import type { NoteSortOrder } from '@zennotes/app-core/store'
-import { naturalCompare } from '@zennotes/app-core/lib/natural-sort'
 import { confirmApp } from '@zennotes/app-core/lib/confirm-requests'
 import { promptApp } from '@zennotes/app-core/lib/prompt-requests'
 import { buildMoveNotePrompt, parseMoveNoteTarget } from '@zennotes/app-core/lib/move-note'
@@ -25,6 +24,10 @@ import { Keyboard } from '@capacitor/keyboard'
 import { setDrawerOpen, takeDrawerPath, useDrawerOpen } from './drawer-state'
 import { openMobileSheet } from './sheet-state'
 import { goHome } from './nav'
+import { dirOf, noteComparator, pinnedFirst } from './note-order'
+import { usePins, toggleNotePin, toggleFolderPin } from './pins'
+import { refreshVault } from './refresh'
+import { SwipeRow } from './SwipeRow'
 import { getStoragePref } from '../bridge/icloud'
 import {
   ICLOUD_VAULT_ROOT_PREFIX,
@@ -87,7 +90,8 @@ const D = {
   plus: 'M12 5v14M5 12h14',
   chevDown: 'M6 9l6 6 6-6',
   more: 'M6 12h.01M12 12h.01M18 12h.01',
-  pencil: 'M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z'
+  pencil: 'M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z',
+  pin: 'M12 17v5M9 3h6l-1 7 3 2v3H7v-3l3-2-1-7z'
 }
 
 /** WKWebView leaves the soft keyboard up when a focused input unmounts
@@ -102,27 +106,8 @@ function dismissKeyboard(): void {
 // the inbox remapped to `01 - Entry/`, a hardcoded 'inbox/' strip left every
 // note un-matched and the drawer empty.
 
-type SortableNote = { title: string; updatedAt: number; createdAt: number }
-
-/** The drawer's note order, mirroring desktop's shared `noteSortOrder` pref so
- *  the two stay consistent. 'none'/'manual' (a desktop drag order the drawer
- *  can't reproduce) fall back to most-recently-edited. */
-function noteComparator(order: NoteSortOrder): (a: SortableNote, b: SortableNote) => number {
-  switch (order) {
-    case 'name-asc':
-      return (a, b) => naturalCompare(a.title, b.title)
-    case 'name-desc':
-      return (a, b) => naturalCompare(b.title, a.title)
-    case 'updated-asc':
-      return (a, b) => a.updatedAt - b.updatedAt
-    case 'created-desc':
-      return (a, b) => b.createdAt - a.createdAt
-    case 'created-asc':
-      return (a, b) => a.createdAt - b.createdAt
-    default:
-      return (a, b) => b.updatedAt - a.updatedAt
-  }
-}
+// noteComparator/dirOf live in note-order.ts, shared with the editor's
+// swipe-between-notes gesture so the flick order matches the drawer's.
 
 const SORT_OPTIONS: Array<[NoteSortOrder, string]> = [
   ['name-asc', 'Name (A–Z)'],
@@ -132,11 +117,6 @@ const SORT_OPTIONS: Array<[NoteSortOrder, string]> = [
   ['created-desc', 'Recently created'],
   ['created-asc', 'Oldest created']
 ]
-
-function dirOf(p: string): string {
-  const idx = p.lastIndexOf('/')
-  return idx === -1 ? '' : p.slice(0, idx)
-}
 
 /**
  * Vault switcher (tap the drawer's vault name). One-tap rows for every vault
@@ -766,6 +746,8 @@ export function VaultsSheet({ onClose }: { onClose: () => void }): React.JSX.Ele
 export function MobileDrawer(): React.JSX.Element | null {
   const open = useDrawerOpen()
   const vaultName = useStore((s) => s.vault?.name ?? 'ZenNotes')
+  const vaultRoot = useStore((s) => s.vault?.root ?? null)
+  const pins = usePins(vaultRoot)
   const notes = useStore((s) => s.notes)
   const folders = useStore((s) => s.folders)
   const primaryAtRoot = useStore((s) => s.vaultSettings.primaryNotesLocation === 'root')
@@ -826,12 +808,19 @@ export function MobileDrawer(): React.JSX.Element | null {
         return dirOf(sub) === path && !isFormDirName(dirOf(sub).split('/').pop() ?? '')
       })
       .sort(noteComparator(noteSortOrder))
+    // Pinned rows float to the top of their group, keeping the sort order
+    // within each half (pins.ts).
+    const pinnedNoteSet = new Set(pins.notes)
+    const pinnedFolderSet = new Set(pins.folders)
     return {
-      childFolders: [...folderSet.entries()].sort((a, b) => a[1].localeCompare(b[1])),
+      childFolders: pinnedFirst(
+        [...folderSet.entries()].sort((a, b) => a[1].localeCompare(b[1])),
+        ([subpath]) => pinnedFolderSet.has(subpath)
+      ),
       childDatabases: databases.sort((a, b) => a[1].localeCompare(b[1])),
-      childNotes: noteRows
+      childNotes: pinnedFirst(noteRows, (n) => pinnedNoteSet.has(n.path))
     }
-  }, [notes, folders, path, primaryAtRoot, noteSortOrder, vaultSettings])
+  }, [notes, folders, path, primaryAtRoot, noteSortOrder, vaultSettings, pins])
 
   if (!open) return null
 
@@ -851,6 +840,9 @@ export function MobileDrawer(): React.JSX.Element | null {
     <>
     <MobileDrawerBody
       vaultName={vaultName}
+      vaultRoot={vaultRoot}
+      pinnedNotes={pins.notes}
+      pinnedFolders={pins.folders}
       dailyDir={dailyDir}
       weeklyDir={weeklyDir}
       monthlyDir={monthlyDir}
@@ -922,6 +914,9 @@ function useLongPress(): (fn: () => void) => {
 
 function MobileDrawerBody(props: {
   vaultName: string
+  vaultRoot: string | null
+  pinnedNotes: string[]
+  pinnedFolders: string[]
   onOpenVaults: () => void
   dailyDir: string | null
   weeklyDir: string | null
@@ -939,6 +934,9 @@ function MobileDrawerBody(props: {
 }): React.JSX.Element {
   const {
     vaultName,
+    vaultRoot,
+    pinnedNotes,
+    pinnedFolders,
     dailyDir,
     weeklyDir,
     monthlyDir,
@@ -962,6 +960,84 @@ function MobileDrawerBody(props: {
   // vault change events.
   const [noteMenu, setNoteMenu] = useState<{ path: string; title: string } | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ subpath: string; name: string } | null>(null)
+
+  const pinNote = (notePath: string): void => {
+    if (!vaultRoot) return
+    toggleNotePin(
+      vaultRoot,
+      notePath,
+      s().notes.map((n) => n.path)
+    )
+  }
+
+  const pinFolder = (subpath: string): void => {
+    if (!vaultRoot) return
+    toggleFolderPin(
+      vaultRoot,
+      subpath,
+      s()
+        .folders.filter((f) => f.folder === 'inbox')
+        .map((f) => f.subpath)
+    )
+  }
+
+  // Pull-to-refresh on the scroll area: pull down from the top to rescan the
+  // vault and kick cloud sync — the drawer is where a remote/cloud user goes
+  // to ask "is this list current?".
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [pull, setPull] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const pullTouch = useRef<{ y: number; active: boolean } | null>(null)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const PULL_TRIGGER = 64
+    const onStart = (e: TouchEvent): void => {
+      if (e.touches.length !== 1 || refreshing) return
+      pullTouch.current = { y: e.touches[0]!.clientY, active: false }
+    }
+    const onMove = (e: TouchEvent): void => {
+      const t = pullTouch.current
+      if (!t || e.touches.length !== 1) return
+      const dy = e.touches[0]!.clientY - t.y
+      if (!t.active) {
+        // Only claim the gesture when the list is already at the top and the
+        // pull is clearly downward; otherwise it's a normal scroll.
+        if (el.scrollTop > 0 || dy < 8) {
+          if (el.scrollTop > 0) pullTouch.current = null
+          return
+        }
+        t.active = true
+      }
+      e.preventDefault()
+      setPull(Math.max(0, Math.min(dy / 2, 96)))
+    }
+    const onEnd = (): void => {
+      const t = pullTouch.current
+      pullTouch.current = null
+      if (!t?.active) return
+      setPull((current) => {
+        if (current >= PULL_TRIGGER / 2 + 8) {
+          setRefreshing(true)
+          void refreshVault().finally(() => {
+            setRefreshing(false)
+          })
+        }
+        return 0
+      })
+    }
+    el.addEventListener('touchstart', onStart, { passive: true })
+    el.addEventListener('touchmove', onMove, { passive: false })
+    el.addEventListener('touchend', onEnd)
+    el.addEventListener('touchcancel', onEnd)
+    return () => {
+      el.removeEventListener('touchstart', onStart)
+      el.removeEventListener('touchmove', onMove)
+      el.removeEventListener('touchend', onEnd)
+      el.removeEventListener('touchcancel', onEnd)
+    }
+  }, [refreshing])
 
   const moveNoteFromDrawer = (notePath: string): void => {
     setNoteMenu(null)
@@ -1095,7 +1171,17 @@ function MobileDrawerBody(props: {
           Search notes
         </button>
 
-        <div className="zn-mobile-drawer-scroll">
+        <div className="zn-mobile-drawer-scroll" ref={scrollRef}>
+          {(pull > 0 || refreshing) && (
+            <div
+              className={`zn-mobile-drawer-refresh${refreshing ? ' is-refreshing' : ''}`}
+              style={refreshing ? undefined : { height: pull }}
+              aria-live="polite"
+            >
+              <span className="zn-mobile-drawer-refresh-spinner" aria-hidden="true" />
+              {refreshing ? 'Refreshing…' : pull >= 40 ? 'Release to refresh' : ''}
+            </div>
+          )}
           {path === '' ? (
             <div className="zn-mobile-drawer-group">
               {/* Views like Tasks/Tags have no back chevron (that's a note-header
@@ -1199,18 +1285,32 @@ function MobileDrawerBody(props: {
             </div>
           )}
           <div className="zn-mobile-drawer-group">
-            {childFolders.map(([subpath, name]) => (
-              <button
-                key={subpath}
-                type="button"
-                onClick={() => setPath(subpath)}
-                {...lp(() => setFolderMenu({ subpath, name }))}
-              >
-                <Icon d={dateDirs.has(subpath) ? D.calendar : D.folder} />
-                <span className="zn-truncate">{name}</span>
-                <span className="zn-mobile-drawer-chevron">›</span>
-              </button>
-            ))}
+            {childFolders.map(([subpath, name]) => {
+              const isPinned = pinnedFolders.includes(subpath)
+              return (
+                <SwipeRow
+                  key={subpath}
+                  leftActions={[]}
+                  pinned={isPinned}
+                  onPinSwipe={() => pinFolder(subpath)}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setPath(subpath)}
+                    {...lp(() => setFolderMenu({ subpath, name }))}
+                  >
+                    <Icon d={dateDirs.has(subpath) ? D.calendar : D.folder} />
+                    <span className="zn-truncate">{name}</span>
+                    {isPinned && (
+                      <span className="zn-mobile-drawer-pin" aria-label="Pinned">
+                        <Icon d={D.pin} />
+                      </span>
+                    )}
+                    <span className="zn-mobile-drawer-chevron">›</span>
+                  </button>
+                </SwipeRow>
+              )
+            })}
             {childDatabases.map(([tabPath, title, subpath]) => (
               <button
                 key={tabPath}
@@ -1222,17 +1322,43 @@ function MobileDrawerBody(props: {
                 <span className="zn-truncate">{title}</span>
               </button>
             ))}
-            {childNotes.map((n) => (
-              <button
-                key={n.path}
-                type="button"
-                onClick={() => go(() => s().selectNote(n.path))}
-                {...lp(() => setNoteMenu({ path: n.path, title: n.title }))}
-              >
-                <Icon d={D.note} />
-                <span className="zn-truncate">{n.title}</span>
-              </button>
-            ))}
+            {childNotes.map((n) => {
+              const isPinned = pinnedNotes.includes(n.path)
+              return (
+                <SwipeRow
+                  key={n.path}
+                  leftActions={[
+                    {
+                      label: 'Archive',
+                      icon: <Icon d={D.archive} />,
+                      onAction: () => archiveNoteFromDrawer(n.path)
+                    },
+                    {
+                      label: 'Delete',
+                      icon: <Icon d={D.trash} />,
+                      danger: true,
+                      onAction: () => trashNote(n.path, n.title)
+                    }
+                  ]}
+                  pinned={isPinned}
+                  onPinSwipe={() => pinNote(n.path)}
+                >
+                  <button
+                    type="button"
+                    onClick={() => go(() => s().selectNote(n.path))}
+                    {...lp(() => setNoteMenu({ path: n.path, title: n.title }))}
+                  >
+                    <Icon d={D.note} />
+                    <span className="zn-truncate">{n.title}</span>
+                    {isPinned && (
+                      <span className="zn-mobile-drawer-pin" aria-label="Pinned">
+                        <Icon d={D.pin} />
+                      </span>
+                    )}
+                  </button>
+                </SwipeRow>
+              )
+            })}
             {childFolders.length === 0 && childDatabases.length === 0 && childNotes.length === 0 && (
               <div className="zn-mobile-drawer-empty">No notes here yet</div>
             )}
@@ -1258,6 +1384,18 @@ function MobileDrawerBody(props: {
               <div className="zn-mobile-sheet-title zn-truncate">{noteMenu.title}</div>
               <div className="zn-mobile-sheet-scroll">
                 <div className="zn-mobile-sheet-group">
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row"
+                    onClick={() => {
+                      const p = noteMenu.path
+                      setNoteMenu(null)
+                      pinNote(p)
+                    }}
+                  >
+                    <Icon d={D.pin} />
+                    {pinnedNotes.includes(noteMenu.path) ? 'Unpin' : 'Pin'}
+                  </button>
                   <button
                     type="button"
                     className="zn-mobile-sheet-row"
@@ -1319,6 +1457,18 @@ function MobileDrawerBody(props: {
               <div className="zn-mobile-sheet-title zn-truncate">{folderMenu.name}</div>
               <div className="zn-mobile-sheet-scroll">
                 <div className="zn-mobile-sheet-group">
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row"
+                    onClick={() => {
+                      const sp = folderMenu.subpath
+                      setFolderMenu(null)
+                      pinFolder(sp)
+                    }}
+                  >
+                    <Icon d={D.pin} />
+                    {pinnedFolders.includes(folderMenu.subpath) ? 'Unpin' : 'Pin'}
+                  </button>
                   <button
                     type="button"
                     className="zn-mobile-sheet-row"

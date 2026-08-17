@@ -10,18 +10,17 @@
  */
 import { App as CapApp } from '@capacitor/app'
 import { Keyboard, KeyboardResize } from '@capacitor/keyboard'
-import { renderZenNotesApp, requestCloudAutoSync } from '@zennotes/app-core/main'
+import { renderZenNotesApp } from '@zennotes/app-core/main'
 import {
   installMobileBridge,
   loadNativeAppVersion,
   bootVault,
-  activeVault,
   importPendingShares
 } from './bridge/mobile-bridge'
-import { ensureDownloaded } from './bridge/icloud'
 import { configureMobileCloudAuth } from './bridge/mobile-cloud-auth'
 import { maybeRunFirstRunOnboarding } from './ui-mobile/Onboarding'
 import { mountMobileShell } from './ui-mobile/MobileShell'
+import { refreshVault } from './ui-mobile/refresh'
 import { isPhoneViewport, watchPhoneClass } from './viewport'
 import './ui-mobile/mobile.css'
 
@@ -64,23 +63,10 @@ function wireKeyboard(): void {
 function wireForegroundRescan(): void {
   void CapApp.addListener('appStateChange', ({ isActive }) => {
     if (!isActive) return
-    // Order matters: pull down anything iCloud evicted/changed while
-    // backgrounded, land shared captures, then rescan so the UI catches up.
-    void (async () => {
-      try {
-        const v = activeVault()
-        if (v.fs.isCloud && v.fs.rootUri) await ensureDownloaded(v.fs.rootUri, 15000)
-      } catch {
-        // no vault open yet
-      }
-      await importPendingShares().catch(() => 0)
-      try {
-        await activeVault().rescan()
-      } catch {
-        // no vault open yet
-      }
-      requestCloudAutoSync('foreground')
-    })()
+    // Shared with the drawer's pull-to-refresh (refresh.ts): pull down
+    // anything iCloud evicted/changed while backgrounded, land shared
+    // captures, then rescan so the UI catches up.
+    void refreshVault()
   }).catch(() => {})
 }
 

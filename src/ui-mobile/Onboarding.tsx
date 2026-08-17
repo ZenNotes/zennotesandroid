@@ -17,6 +17,7 @@ import ReactDOM from 'react-dom/client'
 import { isFirstRun } from '../bridge/mobile-bridge'
 import { setStoragePref, type VaultStorage } from '../bridge/icloud'
 import ensoUrl from '../assets/enso.png'
+import { isPhoneViewport } from '../viewport'
 
 /** Set when the overlay completed this install; guards against re-showing. */
 const ONBOARDED_KEY = 'zn-mobile:onboarded'
@@ -26,7 +27,7 @@ export const WELCOME_PENDING_KEY = 'zn-mobile:welcome-pending'
  *  circle is first tapped. */
 export const FAB_HINT_KEY = 'zn-mobile:fab-hint'
 
-const deviceNoun = window.innerWidth >= 768 ? 'tablet' : 'phone'
+const deviceNoun = isPhoneViewport() ? 'phone' : 'tablet'
 
 interface OnboardingProps {
   onDone: (choice: VaultStorage) => void

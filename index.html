@@ -13,6 +13,33 @@
          is actually selected, so the cold-start path stays untouched. -->
     <link rel="stylesheet" href="/fonts/fonts.css" />
     <script>
+      // Minimal polyfills for stale system WebViews (Chrome <98). WebView
+      // updates ride Play, so devices without Play services — or with
+      // updates disabled — can sit years behind the OS; the API 29 emulator
+      // image ships WebView 91, where a missing Object.hasOwn in a vendor
+      // chunk rejected bootstrap's dynamic import('./main') and the app
+      // never painted (found while reproducing issue #12 on Android 10).
+      // Only the three gaps that block boot; anything older than these
+      // (Chrome <92) predates the syntax the bundle itself uses.
+      if (!Object.hasOwn) {
+        Object.defineProperty(Object, 'hasOwn', {
+          value: function (o, k) { return Object.prototype.hasOwnProperty.call(Object(o), k) },
+          writable: true, configurable: true
+        })
+      }
+      if (!Array.prototype.at) {
+        Object.defineProperty(Array.prototype, 'at', {
+          value: function (i) {
+            var n = Math.trunc(i) || 0
+            if (n < 0) n += this.length
+            return n < 0 || n >= this.length ? undefined : this[n]
+          },
+          writable: true, configurable: true
+        })
+      }
+      if (typeof structuredClone !== 'function') {
+        window.structuredClone = function (v) { return JSON.parse(JSON.stringify(v)) }
+      }
       // Pre-module bootstrap. Must run before ANY app code: the app-core
       // store reads localStorage at module-evaluation time, and Rollup chunk
       // hoisting means no module of ours is guaranteed to run first — a

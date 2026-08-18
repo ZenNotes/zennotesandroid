@@ -95,10 +95,12 @@ import {
   deleteMobileCloudBackup,
   downloadMobileCloudBackup,
   getMobileCloudBackupSchedule,
+  getMobileCloudSettingsConflict,
   getMobileCloudVaultLink,
   linkMobileCloudVault,
   listMobileCloudBackupItems,
   listMobileCloudBackups,
+  resolveMobileCloudSettingsConflict,
   restoreMobileCloudBackup,
   restoreMobileCloudBackupNote,
   syncMobileCloudVault,
@@ -122,7 +124,7 @@ import {
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 import { isPhoneViewport } from '../viewport'
 
-let appVersion = '1.1.7'
+let appVersion = '1.1.8'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {
@@ -835,6 +837,9 @@ export const mobileBridge: ZenBridge = {
     createAndLinkMobileCloudVault(activeMobileVault(), name),
   unlinkCloudVault: () => unlinkMobileCloudVault(activeMobileVault()),
   syncCloudVault: () => syncMobileCloudVault(activeMobileVault()),
+  getCloudSettingsConflict: () => getMobileCloudSettingsConflict(activeMobileVault()),
+  resolveCloudSettingsConflict: (choice) =>
+    resolveMobileCloudSettingsConflict(activeMobileVault(), choice),
   listCloudBackups: () => listMobileCloudBackups(activeMobileVault()),
   getCloudBackupSchedule: () => getMobileCloudBackupSchedule(activeMobileVault()),
   updateCloudBackupSchedule: (enabled) =>

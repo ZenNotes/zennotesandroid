@@ -7,8 +7,14 @@ import type {
   CloudBackupSnapshot,
   CloudBackupSnapshotItem,
   CloudSyncRunSummary,
+  CloudSyncSettingsChoice,
+  CloudSyncSettingsConflict,
   CloudVaultLink
 } from '@zennotes/bridge-contract/cloud-sync'
+import {
+  CLOUD_SYNC_SETTINGS_CONFLICT_PATH,
+  CLOUD_SYNC_VAULT_SETTINGS_PATH
+} from '@zennotes/shared-domain/cloud-sync'
 import {
   CloudSyncHostService,
   type CloudSyncHostPersistence,
@@ -83,6 +89,46 @@ export async function syncMobileCloudVault(vault: MobileVault): Promise<CloudSyn
   }
 
   return summary
+}
+
+/** The pending settings question, if sync parked a cloud version. It lives
+ *  in the vault rather than in memory, so closing the app does not answer
+ *  it by accident (desktop parity). */
+export async function getMobileCloudSettingsConflict(
+  vault: MobileVault
+): Promise<CloudSyncSettingsConflict | null> {
+  const parked = await vault.fs.statOrNull(CLOUD_SYNC_SETTINGS_CONFLICT_PATH)
+  if (parked?.type !== 'file') return null
+  return {
+    path: CLOUD_SYNC_VAULT_SETTINGS_PATH,
+    cloud_path: CLOUD_SYNC_SETTINGS_CONFLICT_PATH
+  }
+}
+
+/** Answer it. Keeping this device's settings just drops the parked copy;
+ *  the next sync pushes the local ones up. Taking the cloud's writes them
+ *  through the vault's own normalizer, so a hand-edited or older-format
+ *  file cannot land as broken settings. */
+export async function resolveMobileCloudSettingsConflict(
+  vault: MobileVault,
+  choice: CloudSyncSettingsChoice
+): Promise<void> {
+  if (choice === 'cloud') {
+    const raw = await vault.fs.readTextOrNull(CLOUD_SYNC_SETTINGS_CONFLICT_PATH)
+    let parsed: unknown = null
+    if (raw !== null) {
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        parsed = null
+      }
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('The settings from the cloud could not be read, so nothing was changed.')
+    }
+    await vault.setVaultSettings(parsed as Parameters<MobileVault['setVaultSettings']>[0])
+  }
+  await vault.fs.deleteFile(CLOUD_SYNC_SETTINGS_CONFLICT_PATH).catch(() => {})
 }
 
 export async function listMobileCloudBackups(vault: MobileVault): Promise<CloudBackupSnapshot[]> {

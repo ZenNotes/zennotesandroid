@@ -95,10 +95,12 @@ import {
   deleteMobileCloudBackup,
   downloadMobileCloudBackup,
   getMobileCloudBackupSchedule,
+  getMobileCloudSettingsConflict,
   getMobileCloudVaultLink,
   linkMobileCloudVault,
   listMobileCloudBackupItems,
   listMobileCloudBackups,
+  resolveMobileCloudSettingsConflict,
   restoreMobileCloudBackup,
   restoreMobileCloudBackupNote,
   syncMobileCloudVault,
@@ -835,6 +837,9 @@ export const mobileBridge: ZenBridge = {
     createAndLinkMobileCloudVault(activeMobileVault(), name),
   unlinkCloudVault: () => unlinkMobileCloudVault(activeMobileVault()),
   syncCloudVault: () => syncMobileCloudVault(activeMobileVault()),
+  getCloudSettingsConflict: () => getMobileCloudSettingsConflict(activeMobileVault()),
+  resolveCloudSettingsConflict: (choice) =>
+    resolveMobileCloudSettingsConflict(activeMobileVault(), choice),
   listCloudBackups: () => listMobileCloudBackups(activeMobileVault()),
   getCloudBackupSchedule: () => getMobileCloudBackupSchedule(activeMobileVault()),
   updateCloudBackupSchedule: (enabled) =>

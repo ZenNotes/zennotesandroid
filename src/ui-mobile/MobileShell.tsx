@@ -8,8 +8,10 @@
  */
 import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
+import { App as CapApp } from '@capacitor/app'
 import { Haptics, ImpactStyle } from '@capacitor/haptics'
 import { Keyboard } from '@capacitor/keyboard'
+import { closeSearchPanel } from '@codemirror/search'
 import { useStore } from '@zennotes/app-core/store'
 import type { TaskMutation } from '@zennotes/app-core/store'
 import type { VaultTask } from '@shared/tasks'
@@ -47,7 +49,13 @@ import {
   listSwitchableVaults,
   type MobileVaultEntry
 } from '../bridge/mobile-bridge'
-import { closeMobileSheet, openMobileSheet, useMobileSheet } from './sheet-state'
+import {
+  closeMobileSheet,
+  isMobileSheetOpen,
+  openMobileSheet,
+  useMobileSheet
+} from './sheet-state'
+import { useAtlasTouchGestures } from './atlas-touch-shim'
 import { WELCOME_PENDING_KEY, FAB_HINT_KEY } from './Onboarding'
 import { WELCOME_NOTE_PATH } from '../bridge/welcome-note'
 import ensoUrl from '../assets/enso.png'
@@ -462,6 +470,20 @@ function MobileNav(): React.JSX.Element | null {
   const [fabHint, setFabHint] = useState(
     () => localStorage.getItem(FAB_HINT_KEY) === 'pending'
   )
+
+  // System back closes whichever of this component's sheets is open before
+  // the useSystemBackClose cascade falls through to app-level layers.
+  useEffect(() => {
+    const onBack = (e: Event): void => {
+      if (createOpen) setCreateOpen(false)
+      else if (sheetOpen) setSheetOpen(false)
+      else if (fabOpen) setFabOpen(false)
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener('zn:android-back', onBack)
+    return () => window.removeEventListener('zn:android-back', onBack)
+  }, [createOpen, sheetOpen, fabOpen])
 
   if (!vault) return null
 
@@ -1433,6 +1455,16 @@ function cleanSettingsContent(panel: HTMLElement): void {
     // "Learn how …" links open the Help view, which is hidden on mobile —
     // a dead end.
     if (label.startsWith('Learn how ')) btn.classList.add('zn-settings-hidden')
+    // The desktop header's own Done would sit alongside the injected pill on
+    // phones, in a different shape (Discord feedback: two Done styles). One
+    // affordance: the pill, styled once, shown on both pages.
+    if (
+      isPhoneWidth() &&
+      label === 'Done' &&
+      !btn.classList.contains('zn-settings-done')
+    ) {
+      btn.classList.add('zn-settings-hidden')
+    }
   }
 }
 
@@ -1609,6 +1641,97 @@ function useHeaderBackButton(): void {
       observer.disconnect()
       cancelAnimationFrame(raf)
       for (const btn of document.querySelectorAll('.zn-header-back')) btn.remove()
+    }
+  }, [])
+}
+
+/**
+ * System back (gesture or button) closes the top-most layer instead of being
+ * swallowed (Discord feedback, 2026-08-20). With no JS listener, Capacitor's
+ * App plugin intercepts every back press and — since the SPA has no WebView
+ * history — does nothing at all, so the gesture felt dead everywhere.
+ *
+ * The cascade mirrors what a tap on each layer's own affordance would do,
+ * top-most first. Components whose open state is private (the FAB dial, the
+ * kanban move sheet) participate through the cancelable `zn:android-back`
+ * event rather than lifting their state here.
+ */
+function useSystemBackClose(): void {
+  useEffect(() => {
+    const escape = (): void => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    }
+    const handle = (): void => {
+      // 1. Self-managed sheets (FAB dial, create/action sheets, kanban move).
+      const consumed = !window.dispatchEvent(
+        new CustomEvent('zn:android-back', { cancelable: true })
+      )
+      if (consumed) return
+      // 2. Layers stacked above modals: nested editors, palettes, menus.
+      //    Their close handlers all listen for Escape at the window.
+      if (document.querySelector('.z-nested, .z-palette, div[role="menu"]')) {
+        escape()
+        return
+      }
+      // 3. The vaults sheet (can be summoned from inside Settings).
+      if (isMobileSheetOpen()) {
+        closeMobileSheet()
+        return
+      }
+      // 4. Settings: detail page pops to the section list first (the same
+      //    step the injected back chevron performs); the list closes the way
+      //    the Done pill does. Not via Escape — app-core's Esc path runs
+      //    focusEditorNormalMode(), which pops the soft keyboard over
+      //    whatever screen back just revealed.
+      const settings = document.querySelector<HTMLElement>('[data-zn-settings]')
+      if (settings) {
+        if (settings.dataset.znView === 'detail') settings.dataset.znView = 'nav'
+        else useStore.getState().setSettingsOpen(false)
+        return
+      }
+      // 5. Any remaining modal (prompts, confirms, dialogs).
+      if (document.querySelector('.z-modal')) {
+        escape()
+        return
+      }
+      // 6. Full-screen right panels (calendar/outline/connections/comments).
+      if (document.querySelector(RIGHT_PANEL_SELECTOR)) {
+        window.dispatchEvent(new Event('zen:close-right-panel'))
+        return
+      }
+      // 7. The drawer.
+      if (isDrawerOpen()) {
+        setDrawerOpen(false)
+        return
+      }
+      // 8. The in-note search panel (toolbar's Find button).
+      if (document.querySelector('.cm-panel.cm-search')) {
+        const v = useStore.getState().editorViewRef
+        if (v) {
+          closeSearchPanel(v)
+          return
+        }
+      }
+      // 9. Phone navigation: jump history, then up to Home — the same
+      //    fallback order as the header back chevron.
+      if (isPhoneWidth()) {
+        const s = useStore.getState()
+        if (s.noteBackstack.length > 0) {
+          runCommand('nav.back')
+          return
+        }
+        const leaf = findLeaf(s.paneLayout, s.activePaneId)
+        if (leaf && leaf.activeTab !== null) {
+          goHome()
+          return
+        }
+      }
+      // 10. Home with nothing open: hand back to Android.
+      void CapApp.minimizeApp()
+    }
+    const sub = CapApp.addListener('backButton', handle)
+    return () => {
+      void sub.then((h) => h.remove())
     }
   }, [])
 }
@@ -1975,6 +2098,17 @@ function KanbanMoveSheet(): React.JSX.Element | null {
     return () => window.removeEventListener('zen:kanban-move', onMove)
   }, [])
 
+  // System back dismisses the picker (see useSystemBackClose).
+  useEffect(() => {
+    const onBack = (e: Event): void => {
+      if (!state) return
+      setState(null)
+      e.preventDefault()
+    }
+    window.addEventListener('zn:android-back', onBack)
+    return () => window.removeEventListener('zn:android-back', onBack)
+  }, [state])
+
   if (!state) return null
 
   const pick = (columnId: string): void => {
@@ -2282,7 +2416,15 @@ function useLayoutSettingsRow(): void {
         anchor = anchor.parentElement
       }
       const parent = anchor?.parentElement
-      if (!anchor || !parent) return
+      if (!anchor || !parent) {
+        // Category switched away: the content column is reused across panes,
+        // so a sibling island left in place bleeds into the next pane (seen
+        // as the Layout card rendering inside About). Detach — the React
+        // root stays alive on the detached container, same keep-alive
+        // discipline as above.
+        container?.remove()
+        return
+      }
       if (container?.parentElement === parent && container.nextElementSibling === anchor) return
       if (!container) {
         container = document.createElement('div')
@@ -2291,6 +2433,75 @@ function useLayoutSettingsRow(): void {
         root.render(<SettingsLayoutRow />)
       }
       parent.insertBefore(container, anchor)
+    }
+    const observer = new MutationObserver(() => sync())
+    observer.observe(document.body, { childList: true, subtree: true })
+    sync()
+    return () => {
+      observer.disconnect()
+      root?.unmount()
+      container?.remove()
+    }
+  }, [])
+}
+
+// ---------------------------------------------------------------------------
+// Settings → About → GitHub links (Discord feedback, 2026-08-20: "About
+// section has no link to Github"). App-core's About pane links only to
+// lumarylabs.com; the project repo and the Android issue tracker — where
+// this shell's bug reports actually go — are nowhere to be found. Mounted
+// as a React island above the "Built by" block, in both layouts. Capacitor
+// opens external hosts in the system browser, same as the existing
+// lumarylabs.com anchors.
+// ---------------------------------------------------------------------------
+
+function SettingsGitHubLinks(): React.JSX.Element {
+  return (
+    <div className="zn-settings-github">
+      <span className="zn-settings-github-label">Open source</span>
+      <a
+        href="https://github.com/ZenNotes/zennotes"
+        target="_blank"
+        rel="noreferrer"
+      >
+        ZenNotes on GitHub
+      </a>
+      <a
+        href="https://github.com/ZenNotes/zennotesandroid/issues"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Report an Android issue
+      </a>
+    </div>
+  )
+}
+
+function useAboutGitHubLinks(): void {
+  useEffect(() => {
+    let container: HTMLElement | null = null
+    let root: ReturnType<typeof ReactDOM.createRoot> | null = null
+    const sync = (): void => {
+      // Anchor on the "Built by" block (the About pane's one search target);
+      // same keep-alive discipline as the vault and layout islands.
+      const builtBy = document.querySelector<HTMLElement>(
+        '[data-settings-search-id="lumary-labs"]'
+      )
+      const parent = builtBy?.parentElement
+      if (!builtBy || !parent) {
+        // Detach when About isn't showing so the island can't bleed into
+        // another pane (the content column is reused across categories).
+        container?.remove()
+        return
+      }
+      if (container?.parentElement === parent && container.nextElementSibling === builtBy) return
+      if (!container) {
+        container = document.createElement('div')
+        container.className = 'zn-settings-github-host'
+        root = ReactDOM.createRoot(container)
+        root.render(<SettingsGitHubLinks />)
+      }
+      parent.insertBefore(container, builtBy)
     }
     const observer = new MutationObserver(() => sync())
     observer.observe(document.body, { childList: true, subtree: true })
@@ -2326,6 +2537,9 @@ function MobileShellRoot(): React.JSX.Element {
   useYouTubeLiteEmbeds()
   useVaultSettingsRows()
   useLayoutSettingsRow()
+  useAboutGitHubLinks()
+  useAtlasTouchGestures()
+  useSystemBackClose()
   const sheet = useMobileSheet()
   return (
     <>

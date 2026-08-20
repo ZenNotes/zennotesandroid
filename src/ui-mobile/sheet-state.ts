@@ -22,6 +22,10 @@ export function openMobileSheet(kind: MobileSheetKind): void {
   for (const cb of subscribers) cb()
 }
 
+export function isMobileSheetOpen(): boolean {
+  return current !== null
+}
+
 export function closeMobileSheet(): void {
   if (current === null) return
   current = null

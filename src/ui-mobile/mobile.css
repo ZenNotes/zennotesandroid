@@ -2353,3 +2353,55 @@
     animation: none;
   }
 }
+
+/* ---- Settings → Appearance → Layout (island, #652) ----------------------- */
+.zn-settings-layout-host {
+  display: block;
+}
+.zn-settings-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgb(var(--z-bg-4) / 0.6);
+  border-radius: 1rem;
+  background: rgb(var(--z-bg-2) / 0.35);
+}
+.zn-settings-layout-text {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.zn-settings-layout-title {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: rgb(var(--z-fg));
+}
+.zn-settings-layout-desc {
+  margin-top: 0.125rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: rgb(var(--z-fg) / 0.6);
+}
+.zn-settings-layout-seg {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 0.625rem;
+  background: rgb(var(--z-bg-4) / 0.45);
+}
+.zn-settings-layout-seg button {
+  min-height: 36px;
+  padding: 0 0.875rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: none;
+  color: rgb(var(--z-fg) / 0.7);
+  font-size: 0.875rem;
+}
+.zn-settings-layout-seg button.is-active {
+  background: rgb(var(--z-bg-2));
+  color: rgb(var(--z-fg));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+}

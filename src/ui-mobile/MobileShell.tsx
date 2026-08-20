@@ -58,7 +58,7 @@ import {
 } from './tags-empty-state'
 import { siblingNotesInDrawerOrder } from './note-order'
 import { getPinnedNotes, loadPins } from './pins'
-import { isPhoneViewport } from '../viewport'
+import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
 
 /**
  * Phone-only behaviours gate on this. Smallest-side based, so rotating a phone
@@ -2207,6 +2207,102 @@ function useVaultSettingsRows(): void {
   }, [])
 }
 
+// ---------------------------------------------------------------------------
+// Settings → Appearance → Layout (#652). viewport.ts decides phone vs desktop
+// from the hardware, and cannot see the cases where that is wrong: a tablet
+// whose short side reads as a phone, or a tablet in a keyboard case that just
+// wants the desktop layout. This row lets the user overrule it. It is mounted
+// as a React island at the top of the Appearance section in BOTH layouts, so
+// a tablet pushed to desktop can always find its way back. Applying reloads
+// the page: every mobile hook samples the layout once at mount, and a reload
+// is the one path that re-evaluates all of them consistently.
+// ---------------------------------------------------------------------------
+
+const LAYOUT_CHOICES: { mode: LayoutMode; label: string }[] = [
+  { mode: 'auto', label: 'Automatic' },
+  { mode: 'phone', label: 'Phone' },
+  { mode: 'desktop', label: 'Desktop' }
+]
+
+function SettingsLayoutRow(): React.JSX.Element {
+  const [mode, setMode] = useState<LayoutMode>(() => getLayoutMode())
+  const showing = isPhoneWidth() ? 'phone' : 'desktop'
+  const choose = (next: LayoutMode): void => {
+    if (next === mode) return
+    setLayoutMode(next)
+    setMode(next)
+    // Let the pressed state paint before the page goes away.
+    window.setTimeout(() => window.location.reload(), 150)
+  }
+  return (
+    <div className="zn-settings-layout">
+      <div className="zn-settings-layout-text">
+        <div className="zn-settings-layout-title">Layout</div>
+        <div className="zn-settings-layout-desc">
+          {mode === 'auto'
+            ? `Automatic picks the ${showing} layout for this screen. Choose Desktop for a tablet with a keyboard, or Phone for the one-handed shell. Changing it reloads the app.`
+            : 'Automatic lets the screen size decide. Changing it reloads the app.'}
+        </div>
+      </div>
+      <div className="zn-settings-layout-seg" role="radiogroup" aria-label="Layout">
+        {LAYOUT_CHOICES.map((choice) => (
+          <button
+            key={choice.mode}
+            type="button"
+            role="radio"
+            aria-checked={mode === choice.mode}
+            className={mode === choice.mode ? 'is-active' : ''}
+            onClick={() => choose(choice.mode)}
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function useLayoutSettingsRow(): void {
+  useEffect(() => {
+    let container: HTMLElement | null = null
+    let root: ReturnType<typeof ReactDOM.createRoot> | null = null
+    const sync = (): void => {
+      // Anchor on the Theme card (the block carrying the theme-family search
+      // target, walked up to the Appearance content's direct child) so the
+      // island sits above it as a card of its own. Same keep-alive discipline
+      // as the vault island: the container moves, the React tree survives.
+      const family = document.querySelector<HTMLElement>(
+        '[data-settings-search-id="theme-family"]'
+      )
+      let anchor: HTMLElement | null = family
+      while (
+        anchor &&
+        !(anchor.parentElement?.className ?? '').split(/\s+/).includes('space-y-6')
+      ) {
+        anchor = anchor.parentElement
+      }
+      const parent = anchor?.parentElement
+      if (!anchor || !parent) return
+      if (container?.parentElement === parent && container.nextElementSibling === anchor) return
+      if (!container) {
+        container = document.createElement('div')
+        container.className = 'zn-settings-layout-host'
+        root = ReactDOM.createRoot(container)
+        root.render(<SettingsLayoutRow />)
+      }
+      parent.insertBefore(container, anchor)
+    }
+    const observer = new MutationObserver(() => sync())
+    observer.observe(document.body, { childList: true, subtree: true })
+    sync()
+    return () => {
+      observer.disconnect()
+      root?.unmount()
+      container?.remove()
+    }
+  }, [])
+}
+
 function MobileShellRoot(): React.JSX.Element {
   usePhoneLayoutBoot()
   useDrawerAutoClose()
@@ -2229,6 +2325,7 @@ function MobileShellRoot(): React.JSX.Element {
   useKanbanCardDrag()
   useYouTubeLiteEmbeds()
   useVaultSettingsRows()
+  useLayoutSettingsRow()
   const sheet = useMobileSheet()
   return (
     <>

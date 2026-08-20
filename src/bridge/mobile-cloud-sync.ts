@@ -81,6 +81,11 @@ export async function unlinkMobileCloudVault(vault: MobileVault): Promise<void> 
   await service.unlink(hostVault(vault))
 }
 
+/** Permanently delete the cloud copy, then unlink this device (desktop parity). */
+export async function deleteMobileCloudVault(vault: MobileVault): Promise<void> {
+  await service.deleteLinkedVault(hostVault(vault))
+}
+
 export async function syncMobileCloudVault(vault: MobileVault): Promise<CloudSyncRunSummary> {
   const summary = await service.sync(hostVault(vault))
 

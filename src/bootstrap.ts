@@ -1,7 +1,15 @@
 import { Preferences } from '@capacitor/preferences'
+import { LAYOUT_MODE_KEY } from './viewport'
 
 const WEB_PREFERENCES_KEY = 'zen:prefs:v2'
 const NATIVE_PREFERENCES_KEY = 'zn-app-preferences-v2'
+// The layout override (#652) rides the same mirror: viewport.ts must read it
+// synchronously at boot, and WebView storage alone is not trusted to survive.
+const NATIVE_LAYOUT_MODE_KEY = 'zn-layout-mode'
+const MIRRORED_KEYS: Record<string, string> = {
+  [WEB_PREFERENCES_KEY]: NATIVE_PREFERENCES_KEY,
+  [LAYOUT_MODE_KEY]: NATIVE_LAYOUT_MODE_KEY
+}
 
 let persistenceQueue = Promise.resolve()
 
@@ -46,6 +54,14 @@ async function restoreNativePreferences(): Promise<void> {
     } else if (webPreferences) {
       await Preferences.set({ key: NATIVE_PREFERENCES_KEY, value: webPreferences })
     }
+
+    const nativeLayout = await Preferences.get({ key: NATIVE_LAYOUT_MODE_KEY })
+    const webLayout = localStorage.getItem(LAYOUT_MODE_KEY)
+    if (nativeLayout.value) {
+      localStorage.setItem(LAYOUT_MODE_KEY, nativeLayout.value)
+    } else if (webLayout) {
+      await Preferences.set({ key: NATIVE_LAYOUT_MODE_KEY, value: webLayout })
+    }
   } catch {
     // Continue with WebView storage when native preferences are unavailable.
   }
@@ -58,20 +74,18 @@ function mirrorWebPreferencesToNativeStorage(): void {
   Storage.prototype.setItem = function (key: string, value: string): void {
     originalSetItem.call(this, key, value)
 
-    if (this === window.localStorage && key === WEB_PREFERENCES_KEY) {
-      enqueuePersistence(() =>
-        Preferences.set({ key: NATIVE_PREFERENCES_KEY, value }).then(() => undefined)
-      )
+    const nativeKey = MIRRORED_KEYS[key]
+    if (this === window.localStorage && nativeKey) {
+      enqueuePersistence(() => Preferences.set({ key: nativeKey, value }).then(() => undefined))
     }
   }
 
   Storage.prototype.removeItem = function (key: string): void {
     originalRemoveItem.call(this, key)
 
-    if (this === window.localStorage && key === WEB_PREFERENCES_KEY) {
-      enqueuePersistence(() =>
-        Preferences.remove({ key: NATIVE_PREFERENCES_KEY }).then(() => undefined)
-      )
+    const nativeKey = MIRRORED_KEYS[key]
+    if (this === window.localStorage && nativeKey) {
+      enqueuePersistence(() => Preferences.remove({ key: nativeKey }).then(() => undefined))
     }
   }
 }

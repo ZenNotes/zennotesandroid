@@ -13,6 +13,7 @@ import React, { useEffect, useState } from 'react'
 import { Keyboard } from '@capacitor/keyboard'
 import type { EditorView } from '@codemirror/view'
 import { indentLess, indentMore, redo, undo } from '@codemirror/commands'
+import { openSearchPanel } from '@codemirror/search'
 import { EditorSelection } from '@codemirror/state'
 import { useStore } from '@zennotes/app-core/store'
 import { setBlockType, toggleWrap, wrapLink } from '@zennotes/app-core/lib/cm-format'
@@ -69,6 +70,19 @@ const BUTTONS: ToolButton[] = [
     run: () => withView((v) => redo(v))
   },
   {
+    key: 'find',
+    label: 'Find in note',
+    d: 'M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z',
+    // No withView here: openSearchPanel focuses the panel's own input, and
+    // withView's editor refocus would immediately steal it back. Focus moves
+    // input-to-input, so the keyboard stays up (Discord feedback, 2026-08-20:
+    // "I have to exit the note to search for a word").
+    run: () => {
+      const v = view()
+      if (v) openSearchPanel(v)
+    }
+  },
+  {
     key: 'todo',
     label: 'Checkbox',
     d: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11',
@@ -100,6 +114,12 @@ const BUTTONS: ToolButton[] = [
     glyph: 'I',
     d: '',
     run: () => withView((v) => toggleWrap(v, '*'))
+  },
+  {
+    key: 'strike',
+    label: 'Strikethrough',
+    d: 'M16 4H9a3 3 0 00-2.83 4M14 12a4 4 0 010 8H6M4 12h16',
+    run: () => withView((v) => toggleWrap(v, '~~'))
   },
   {
     key: 'highlight',
@@ -149,7 +169,14 @@ const BUTTONS: ToolButton[] = [
 
 function isEditorFocused(): boolean {
   const active = document.activeElement
-  return active instanceof HTMLElement && active.closest('.cm-editor') !== null
+  return (
+    active instanceof HTMLElement &&
+    active.closest('.cm-editor') !== null &&
+    // The search panel's field lives inside .cm-editor too — while the user
+    // is typing a query, the format row would only cover the panel it
+    // belongs to. Formatting comes back when focus returns to the note.
+    active.closest('.cm-panel') === null
+  )
 }
 
 export function MobileEditorToolbar(): React.JSX.Element | null {

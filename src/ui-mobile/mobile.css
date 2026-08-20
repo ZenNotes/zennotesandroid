@@ -1169,10 +1169,6 @@
   background: rgb(var(--z-bg-3));
 }
 
-.zn-mobile.zn-phone [data-zn-settings][data-zn-view='detail'] .zn-settings-done {
-  display: none;
-}
-
 .zn-mobile.zn-phone [data-zn-settings][data-zn-view='detail'] > aside {
   display: none !important;
 }
@@ -1206,8 +1202,12 @@
   height: 22px;
 }
 
-/* Detail pane needs room for the injected back button. */
-.zn-mobile.zn-phone [data-zn-settings][data-zn-view='detail'] > :not(aside):not(.zn-settings-back) {
+/* Detail pane needs room for the injected back button. The Done pill stays
+   visible here too (one Done, one shape, on both pages — Discord feedback)
+   and must not inherit the pane's padding. */
+.zn-mobile.zn-phone
+  [data-zn-settings][data-zn-view='detail']
+  > :not(aside):not(.zn-settings-back):not(.zn-settings-done) {
   padding-top: 3.5rem;
 }
 
@@ -1977,6 +1977,19 @@
   z-index: 41;
 }
 
+/* In-note search (the toolbar's Find button): CodeMirror mounts the panel in
+   the editor's bottom flex slot — exactly where the fixed format toolbar
+   docks. Keep it clear of the toolbar, with tap-sized fields. */
+.zn-mobile.zn-phone .cm-editor .cm-panels-bottom {
+  margin-bottom: 3.25rem;
+}
+.zn-mobile.zn-phone .cm-editor .cm-search .cm-textfield {
+  min-height: 40px;
+}
+.zn-mobile.zn-phone .cm-editor .cm-search button {
+  min-height: 36px;
+}
+
 /* app-core's floating format bubble (EditorSelectionToolbar) places itself
    just above the selection, flipping below when there's no room — the SAME
    preference Android's native selection toolbar uses, so the two stack on
@@ -2352,4 +2365,92 @@
   .zn-onboard-page {
     animation: none;
   }
+}
+
+/* ---- Settings → Appearance → Layout (island, #652) ----------------------- */
+.zn-settings-layout-host {
+  display: block;
+}
+.zn-settings-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgb(var(--z-bg-4) / 0.6);
+  border-radius: 1rem;
+  background: rgb(var(--z-bg-2) / 0.35);
+}
+.zn-settings-layout-text {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.zn-settings-layout-title {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: rgb(var(--z-fg));
+}
+.zn-settings-layout-desc {
+  margin-top: 0.125rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: rgb(var(--z-fg) / 0.6);
+}
+.zn-settings-layout-seg {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 0.625rem;
+  background: rgb(var(--z-bg-4) / 0.45);
+}
+.zn-settings-layout-seg button {
+  min-height: 36px;
+  padding: 0 0.875rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: none;
+  color: rgb(var(--z-fg) / 0.7);
+  font-size: 0.875rem;
+}
+.zn-settings-layout-seg button.is-active {
+  background: rgb(var(--z-bg-2));
+  color: rgb(var(--z-fg));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+}
+
+/* ---- Settings → About → GitHub links (island) ---------------------------- */
+/* Mirrors the "Built by" block it sits above: bordered top, centered, an
+   uppercase micro-label over the content. */
+.zn-settings-github-host {
+  display: block;
+}
+.zn-settings-github {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgb(var(--z-bg-4) / 0.55);
+  text-align: center;
+}
+.zn-settings-github-label {
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--z-fg) / 0.55);
+}
+.zn-settings-github a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  font-size: 0.9375rem;
+  color: rgb(var(--z-accent));
+}
+.zn-settings-github a:active {
+  opacity: 0.7;
 }

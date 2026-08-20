@@ -195,3 +195,10 @@ and self-hosted workspaces continue to work without an account or subscription.
   large external vaults fast (see the performance note above)
 - Quick-capture home-screen widget / app shortcuts
 - Store distribution work (signing config, Play listing — spec 08)
+- **iPhone-shell parity for the 2026-08-20 feedback pass** — the Atlas touch
+  shim, the About GitHub links island, the single-Done settings treatment,
+  and the editor toolbar's Find-in-note + Strikethrough buttons are
+  Android-first and still need porting to `../zennotesiphone`
+  (`useSystemBackClose` is Android-only: iOS has no system back gesture).
+  Underline stayed out on purpose: ZenNotes markdown has no underline
+  construct on any platform — an upstream schema decision, not a shell one.

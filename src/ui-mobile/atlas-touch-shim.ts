@@ -59,6 +59,9 @@ function wire(canvas: HTMLCanvasElement): void {
   if (wired.has(canvas)) return
   wired.add(canvas)
   canvas.style.touchAction = 'none'
+  // Styling hook: AtlasView's wrapper has no stable class of its own, and
+  // the shell needs one to keep the chip bar clear of the FAB (mobile.css).
+  canvas.parentElement?.classList.add('zn-atlas')
 
   type Mode = 'idle' | 'maybe-tap' | 'drag' | 'pinch'
   let mode: Mode = 'idle'

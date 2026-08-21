@@ -109,7 +109,11 @@
 .zn-mobile-fab-menu button {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.625rem;
+  /* One width for every pill — mixed widths read as ragged in the dial
+     (Adib's feedback); labels sit left, icons right, like a context menu. */
+  width: 8.25rem;
   min-height: 44px;
   padding: 0 0.75rem 0 1rem;
   border-radius: 9999px;
@@ -1979,8 +1983,10 @@
 
 /* In-note search (the toolbar's Find button): CodeMirror mounts the panel in
    the editor's bottom flex slot — exactly where the fixed format toolbar
-   docks. Keep it clear of the toolbar, with tap-sized fields. */
-.zn-mobile.zn-phone .cm-editor .cm-panels-bottom {
+   docks. Clear the toolbar only while the keyboard is up; with it closed the
+   toolbar is gone too, and the reserved strip read as a dead gap under the
+   panel (Adib's feedback, caught on the iOS port). Tap-sized fields. */
+.zn-mobile.zn-phone.zn-kb-open .cm-editor .cm-panels-bottom {
   margin-bottom: 3.25rem;
 }
 .zn-mobile.zn-phone .cm-editor .cm-search .cm-textfield {
@@ -2417,6 +2423,17 @@
   background: rgb(var(--z-bg-2));
   color: rgb(var(--z-fg));
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+}
+
+/* ---- Atlas chrome --------------------------------------------------------- */
+/* The FAB parks over the right end of the Atlas chip bar (it covered
+   "filter" and hid "fit" — Adib's iPhone report). Reserve that corner and
+   let the chips wrap onto a second row instead of running under it. The
+   .zn-atlas class is stamped by the touch shim; the inner selector matches
+   the bar's utility classes since upstream gives it no name. */
+.zn-mobile .zn-atlas > div[class*='inset-x-0'][class*='bottom-0'] {
+  flex-wrap: wrap;
+  padding-right: 4.5rem;
 }
 
 /* ---- Settings → About → GitHub links (island) ---------------------------- */

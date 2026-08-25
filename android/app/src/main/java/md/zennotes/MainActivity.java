@@ -8,6 +8,7 @@ import android.view.WindowManager;
 import android.webkit.WebView;
 
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -24,6 +25,13 @@ public class MainActivity extends BridgeActivity {
         // WebView drains the inbox after the vault opens (importPendingShares).
         ShareInboxPlugin.stashFromIntent(this, getIntent());
         neutralizeDoubleKeyboardInset();
+        // Fullscreen writing (#22): while the JS shell hides the status bar
+        // via the StatusBar plugin, a swipe from the top edge should peek it
+        // transiently instead of bringing it back for good. The behavior is
+        // inert while the bar is visible, so it is safe to set once here.
+        new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView())
+                .setSystemBarsBehavior(
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
     }
 
     // Mirrors SystemBars' private WEBVIEW_VERSION_WITH_SAFE_AREA_FIX: the

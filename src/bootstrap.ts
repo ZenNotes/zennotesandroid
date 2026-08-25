@@ -1,14 +1,17 @@
 import { Preferences } from '@capacitor/preferences'
-import { LAYOUT_MODE_KEY } from './viewport'
+import { HIDE_STATUS_BAR_KEY, LAYOUT_MODE_KEY } from './viewport'
 
 const WEB_PREFERENCES_KEY = 'zen:prefs:v2'
 const NATIVE_PREFERENCES_KEY = 'zn-app-preferences-v2'
 // The layout override (#652) rides the same mirror: viewport.ts must read it
 // synchronously at boot, and WebView storage alone is not trusted to survive.
 const NATIVE_LAYOUT_MODE_KEY = 'zn-layout-mode'
+// The fullscreen flag (#22) mirrors for the same durability reason.
+const NATIVE_HIDE_STATUS_BAR_KEY = 'zn-hide-status-bar'
 const MIRRORED_KEYS: Record<string, string> = {
   [WEB_PREFERENCES_KEY]: NATIVE_PREFERENCES_KEY,
-  [LAYOUT_MODE_KEY]: NATIVE_LAYOUT_MODE_KEY
+  [LAYOUT_MODE_KEY]: NATIVE_LAYOUT_MODE_KEY,
+  [HIDE_STATUS_BAR_KEY]: NATIVE_HIDE_STATUS_BAR_KEY
 }
 
 let persistenceQueue = Promise.resolve()
@@ -61,6 +64,14 @@ async function restoreNativePreferences(): Promise<void> {
       localStorage.setItem(LAYOUT_MODE_KEY, nativeLayout.value)
     } else if (webLayout) {
       await Preferences.set({ key: NATIVE_LAYOUT_MODE_KEY, value: webLayout })
+    }
+
+    const nativeStatusBar = await Preferences.get({ key: NATIVE_HIDE_STATUS_BAR_KEY })
+    const webStatusBar = localStorage.getItem(HIDE_STATUS_BAR_KEY)
+    if (nativeStatusBar.value) {
+      localStorage.setItem(HIDE_STATUS_BAR_KEY, nativeStatusBar.value)
+    } else if (webStatusBar) {
+      await Preferences.set({ key: NATIVE_HIDE_STATUS_BAR_KEY, value: webStatusBar })
     }
   } catch {
     // Continue with WebView storage when native preferences are unavailable.

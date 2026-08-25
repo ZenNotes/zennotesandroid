@@ -26,6 +26,7 @@ import {
 } from '@zennotes/shared-domain/cloud-sync-portable-filesystem'
 import type { CloudSyncState } from '@zennotes/shared-domain/cloud-sync-engine'
 import { MobileVault } from './vault-fs'
+import { reconcileLayoutForCloudJoin } from './cloud-layout'
 import {
   authenticatedCredential,
   authenticatedClient,
@@ -67,7 +68,16 @@ export async function linkMobileCloudVault(
   vault: MobileVault,
   vaultId: string
 ): Promise<CloudVaultLink> {
-  return service.link(hostVault(vault), vaultId)
+  const link = await service.link(hostVault(vault), vaultId)
+  // Joining an established cloud vault: align this vault's physical layout
+  // with the cloud tree before the first sync merges them (#17). Best-effort —
+  // a failure here leaves the pre-1.1.11 behavior, never a broken link.
+  try {
+    await reconcileLayoutForCloudJoin(vault, link.vault_id)
+  } catch {
+    // The link itself succeeded; sync proceeds against the unmoved layout.
+  }
+  return link
 }
 
 export async function createAndLinkMobileCloudVault(

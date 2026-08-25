@@ -2158,6 +2158,16 @@
   display: none;
 }
 
+/* Tablets and landscape phones leave spare width after the last button, and
+   the row read as left-clumped (#21). Auto margins share that spare space
+   evenly — and, unlike `justify-content: space-evenly`, they resolve to zero
+   when the row overflows, so the portrait scroll behavior is untouched (a
+   justified overflowing scroll container clips its leading buttons). */
+.zn-editor-toolbar-scroll button {
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .zn-editor-toolbar button {
   flex: none;
   display: flex;
@@ -2373,9 +2383,10 @@
   }
 }
 
-/* ---- Settings → Appearance → Layout (island, #652) ----------------------- */
+/* ---- Settings → Appearance → Layout (island, #652; status bar #22) ------- */
 .zn-settings-layout-host {
-  display: block;
+  display: grid;
+  gap: 0.75rem;
 }
 .zn-settings-layout {
   display: flex;

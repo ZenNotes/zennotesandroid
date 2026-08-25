@@ -67,6 +67,11 @@ import {
 import { siblingNotesInDrawerOrder } from './note-order'
 import { getPinnedNotes, loadPins } from './pins'
 import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
+import {
+  applyStatusBarPreference,
+  isStatusBarHidden,
+  setStatusBarHidden
+} from './fullscreen'
 
 /**
  * Phone-only behaviours gate on this. Smallest-side based, so rotating a phone
@@ -2358,6 +2363,61 @@ const LAYOUT_CHOICES: { mode: LayoutMode; label: string }[] = [
   { mode: 'desktop', label: 'Desktop' }
 ]
 
+/** Assert the status-bar preference at boot and re-assert it on resume:
+ *  Android brings the system bars back on some background→foreground paths,
+ *  and re-applying a visible bar is a no-op (#22). */
+function useFullscreenChrome(): void {
+  useEffect(() => {
+    void applyStatusBarPreference()
+    const listener = CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) void applyStatusBarPreference()
+    })
+    return () => {
+      void listener.then((handle) => handle.remove())
+    }
+  }, [])
+}
+
+function SettingsStatusBarRow(): React.JSX.Element {
+  const [hidden, setHidden] = useState<boolean>(() => isStatusBarHidden())
+  const choose = (next: boolean): void => {
+    if (next === hidden) return
+    setStatusBarHidden(next)
+    setHidden(next)
+  }
+  return (
+    <div className="zn-settings-layout">
+      <div className="zn-settings-layout-text">
+        <div className="zn-settings-layout-title">Status bar</div>
+        <div className="zn-settings-layout-desc">
+          Hidden gives your notes the whole screen. Swipe down from the top
+          edge to peek at the clock and battery.
+        </div>
+      </div>
+      <div className="zn-settings-layout-seg" role="radiogroup" aria-label="Status bar">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!hidden}
+          className={hidden ? '' : 'is-active'}
+          onClick={() => choose(false)}
+        >
+          Shown
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={hidden}
+          className={hidden ? 'is-active' : ''}
+          onClick={() => choose(true)}
+        >
+          Hidden
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function SettingsLayoutRow(): React.JSX.Element {
   const [mode, setMode] = useState<LayoutMode>(() => getLayoutMode())
   const showing = isPhoneWidth() ? 'phone' : 'desktop'
@@ -2430,7 +2490,12 @@ function useLayoutSettingsRow(): void {
         container = document.createElement('div')
         container.className = 'zn-settings-layout-host'
         root = ReactDOM.createRoot(container)
-        root.render(<SettingsLayoutRow />)
+        root.render(
+          <>
+            <SettingsLayoutRow />
+            <SettingsStatusBarRow />
+          </>
+        )
       }
       parent.insertBefore(container, anchor)
     }
@@ -2540,6 +2605,7 @@ function MobileShellRoot(): React.JSX.Element {
   useAboutGitHubLinks()
   useAtlasTouchGestures()
   useSystemBackClose()
+  useFullscreenChrome()
   const sheet = useMobileSheet()
   return (
     <>

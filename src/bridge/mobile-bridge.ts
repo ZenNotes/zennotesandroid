@@ -125,7 +125,7 @@ import {
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 import { isPhoneViewport } from '../viewport'
 
-let appVersion = '1.1.10'
+let appVersion = '1.1.11'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {

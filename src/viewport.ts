@@ -82,6 +82,12 @@ export function setLayoutMode(mode: LayoutMode): void {
   }
 }
 
+/** localStorage key for the fullscreen (hidden status bar) preference (#22).
+ *  Lives here so bootstrap.ts can mirror it natively without importing the
+ *  status-bar plugin into the boot path; '1' means hidden, absent means the
+ *  default visible chrome. */
+export const HIDE_STATUS_BAR_KEY = 'zn:hide-status-bar'
+
 
 /** Publish the current decision to CSS. Safe to call repeatedly. */
 export function syncPhoneClass(): void {

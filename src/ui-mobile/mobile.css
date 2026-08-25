@@ -2383,9 +2383,10 @@
   }
 }
 
-/* ---- Settings → Appearance → Layout (island, #652) ----------------------- */
+/* ---- Settings → Appearance → Layout (island, #652; status bar #22) ------- */
 .zn-settings-layout-host {
-  display: block;
+  display: grid;
+  gap: 0.75rem;
 }
 .zn-settings-layout {
   display: flex;

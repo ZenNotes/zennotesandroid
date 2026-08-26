@@ -197,7 +197,10 @@ public class SafFsPlugin extends Plugin {
         try {
             String rel = clean(call.getString("path"));
             Entry dir = resolve(tree, rel);
-            if (dir == null || !dir.isDir) throw new FileNotFoundException(rel);
+            if (dir == null || !dir.isDir) {
+                call.reject("Directory does not exist: " + rel, "ZN-SAF-NOT-FOUND");
+                return;
+            }
             Map<String, Entry> listing = listChildren(tree, dir.docId);
             JSArray files = new JSArray();
             for (Map.Entry<String, Entry> e : listing.entrySet()) {
@@ -224,7 +227,10 @@ public class SafFsPlugin extends Plugin {
         try {
             String rel = clean(call.getString("path"));
             Entry e = resolve(tree, rel);
-            if (e == null) throw new FileNotFoundException(rel);
+            if (e == null) {
+                call.reject("File does not exist: " + rel, "ZN-SAF-NOT-FOUND");
+                return;
+            }
             JSObject ret = new JSObject();
             ret.put("type", e.isDir ? "directory" : "file");
             ret.put("size", e.size);

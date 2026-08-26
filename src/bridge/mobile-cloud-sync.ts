@@ -33,6 +33,7 @@ import {
   getMobileCloudAccountStatus
 } from './mobile-cloud-auth'
 import { emitVaultChange } from './events'
+import { isNotFoundError } from './fs-errors'
 
 const STORAGE_ROOT = 'zennotes-cloud-sync'
 
@@ -236,17 +237,23 @@ export async function restoreMobileCloudBackupNote(
 
 function hostVault(vault: MobileVault): CloudSyncHostVault {
   const fs: PortableCloudSyncFileSystem = {
+    // Sync must distinguish an unreadable provider from an empty vault.
     readdir: async (directory) =>
-      (await vault.fs.readdir(directory)).map((entry) => ({
+      (await vault.fs.readdirStrict(directory)).map((entry) => ({
         name: entry.name,
         type: entry.type === 'directory' ? 'directory' : 'file'
       })),
-    stat: async (path) => (await vault.fs.statOrNull(path))?.type ?? null,
+    // Only a verified native not-found may become null and drive deletion.
+    stat: (path) => vault.fs.statVerified(path),
     readBase64: (path) => vault.fs.readBase64(path),
     writeText: (path, value) => vault.fs.writeText(path, value),
     writeBase64: (path, value) => vault.fs.writeBase64(path, value),
     deleteFile: (path) => vault.fs.deleteFile(path),
-    rename: (from, to) => vault.fs.rename(from, to)
+    rename: async (from, to) => {
+      const parent = to.slice(0, to.lastIndexOf('/'))
+      if (parent) await vault.fs.mkdir(parent)
+      await vault.fs.rename(from, to)
+    }
   }
 
   return {
@@ -265,9 +272,15 @@ async function statePath(vaultKey: string, baseUrl: string, vaultId: string): Pr
 }
 
 async function readJson(path: string): Promise<unknown> {
+  let value: string
   try {
     const result = await Filesystem.readFile({ path, directory: Directory.Data, encoding: Encoding.UTF8 })
-    const value = typeof result.data === 'string' ? result.data : await result.data.text()
+    value = typeof result.data === 'string' ? result.data : await result.data.text()
+  } catch (error) {
+    if (isNotFoundError(error)) return null
+    throw error
+  }
+  try {
     return JSON.parse(value) as unknown
   } catch {
     return null

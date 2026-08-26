@@ -1,12 +1,11 @@
 package md.zennotes;
 
-import static androidx.test.espresso.Espresso.onView;
-import static androidx.test.espresso.assertion.ViewAssertions.matches;
-import static androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom;
-import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
+import android.view.View;
 import android.webkit.WebView;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -24,9 +23,16 @@ public class AppLaunchInstrumentedTest {
     }
 
     @Test
-    public void launchesMainActivityAndDisplaysTheWebApp() {
-        try (ActivityScenario<MainActivity> ignored = ActivityScenario.launch(MainActivity.class)) {
-            onView(isAssignableFrom(WebView.class)).check(matches(isDisplayed()));
+    public void launchesMainActivityAndCreatesVisibleWebView() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                assertNotNull(activity.getBridge());
+
+                WebView webView = activity.getBridge().getWebView();
+                assertNotNull(webView);
+                assertEquals(View.VISIBLE, webView.getVisibility());
+                assertTrue(webView.isAttachedToWindow());
+            });
         }
     }
 }

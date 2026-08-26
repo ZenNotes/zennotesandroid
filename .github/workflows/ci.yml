@@ -88,4 +88,4 @@ jobs:
           api-level: 35
           arch: x86_64
           disable-animations: true
-          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
+          script: cd android && ./gradlew --no-daemon :app:connectedDebugAndroidTest

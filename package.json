@@ -7,12 +7,16 @@
   "homepage": "https://zennotes.org",
   "scripts": {
     "dev": "vite",
+    "source:prepare": "sh tooling/prepare-zennotes.sh",
+    "prebuild": "npm run source:prepare",
     "build": "vite build",
-    "test": "node --test src/ui-mobile/tags-empty-state.test.ts",
+    "test": "node --test",
+    "e2e:cloud": "node tooling/cloud-direct-upload-e2e.mjs",
+    "pretypecheck": "npm run source:prepare",
     "typecheck": "tsc --noEmit",
-    "sync": "vite build && cap sync android && git -C ../../opensource/zennotes rev-parse HEAD > .zennotes-commit",
+    "sync": "npm run build && cap sync android",
     "upstream": "sh tooling/upstream-check.sh",
-    "android": "vite build && cap sync android && cap open android"
+    "android": "npm run build && cap sync android && cap open android"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.0",

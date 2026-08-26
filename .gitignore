@@ -1,4 +1,5 @@
 node_modules/
+.zennotes-source/
 dist/
 .DS_Store
 

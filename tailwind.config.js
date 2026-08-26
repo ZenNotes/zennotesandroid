@@ -6,7 +6,7 @@ export default {
   content: [
     './index.html',
     './src/**/*.{ts,tsx}',
-    '../../opensource/zennotes/packages/app-core/src/**/*.{ts,tsx}'
+    '.zennotes-source/packages/app-core/src/**/*.{ts,tsx}'
   ],
   theme: {
     extend: {

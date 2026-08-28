@@ -10,7 +10,15 @@ import android.webkit.WebView;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebView;
+
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebViewClient;
+
+import java.io.ByteArrayInputStream;
+import java.util.Collections;
 
 public class MainActivity extends BridgeActivity {
 
@@ -26,6 +34,7 @@ public class MainActivity extends BridgeActivity {
         // WebView drains the inbox after the vault opens (importPendingShares).
         ShareInboxPlugin.stashFromIntent(this, getIntent());
         neutralizeDoubleKeyboardInset();
+        installCrashProofWebViewClient();
         // Fullscreen writing (#22): while the JS shell hides the status bar
         // via the StatusBar plugin, a swipe from the top edge should peek it
         // transiently instead of bringing it back for good. The behavior is
@@ -78,6 +87,32 @@ public class MainActivity extends BridgeActivity {
         }
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+    }
+
+    /**
+     * Android vitals, 1.1.11 (2 events, 1 user): the process died in
+     * Capacitor's WebViewLocalServer while it served a content:// asset —
+     * the WebView asked for an attachment in a folder (SAF) vault, the
+     * document provider threw IllegalArgumentException for the document
+     * (removed, renamed, or its permission gone), and nothing between
+     * ContentResolver.openInputStream and Chromium's request interceptor
+     * catches it, so an unreadable image was a fatal crash instead of a
+     * broken image. Wrap the interceptor: any runtime failure while
+     * resolving a request answers 404 and the app carries on.
+     */
+    private void installCrashProofWebViewClient() {
+        getBridge().setWebViewClient(new BridgeWebViewClient(getBridge()) {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                try {
+                    return super.shouldInterceptRequest(view, request);
+                } catch (RuntimeException e) {
+                    return new WebResourceResponse(
+                            "text/plain", "utf-8", 404, "Not Found",
+                            Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
+                }
+            }
+        });
     }
 
     private int webViewMajorVersion() {

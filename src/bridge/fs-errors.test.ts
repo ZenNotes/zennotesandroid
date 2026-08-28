@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { isNotFoundError } from './fs-errors.ts'
+
+test('accepts only stable native not-found errors as verified absence', () => {
+  assert.equal(isNotFoundError({ code: 'OS-PLUG-FILE-0008' }), true)
+  assert.equal(isNotFoundError({ code: 'ZN-SAF-NOT-FOUND' }), true)
+})
+
+test('does not turn permissions or transient storage failures into absence', () => {
+  assert.equal(isNotFoundError({ message: "'stat' failed because file does not exist." }), false)
+  assert.equal(isNotFoundError({ message: 'Folder access is no longer granted.' }), false)
+  assert.equal(isNotFoundError({ message: 'stat failed: timeout reading provider' }), false)
+  assert.equal(isNotFoundError(new Error('I/O failure')), false)
+})

@@ -1,16 +1,18 @@
 # ZenNotes for Android
 
 A Capacitor shell that runs the ZenNotes product core (`packages/app-core` from
-the [zennotes monorepo](../../opensource/zennotes)) inside the Android System
+the [zennotes monorepo](https://github.com/ZenNotes/zennotes)) inside the Android System
 WebView, backed by a local-first vault on the device filesystem. Implements the
 architecture in `docs/specs/mobile/` (the Phase 2 "Android fast-follow"),
 derived from the iPhone shell at `../zennotesiphone` — the two shells share the
 same structure and bridge modules; platform-specific divergences are noted
 below.
 
-The zennotes repo is consumed **read-only, straight from source**, via Vite/TS
-path aliases (see `vite.config.ts`) — nothing in that repo is modified. The
-repo is expected at `../../opensource/zennotes` relative to this directory.
+The zennotes repo is consumed **read-only at the exact commit in
+`.zennotes-commit`**. `npm run source:prepare` checks that commit out under the
+ignored `.zennotes-source/` directory and installs its locked dependencies.
+Every typecheck and release build verifies the pin; no ambient sibling checkout
+can silently change a mobile binary.
 
 ## Architecture
 
@@ -31,7 +33,8 @@ src/
     mobile.css            safe areas, overlay drawers, keyboard handling
 android/                  Capacitor-generated Gradle project (appId md.zennotes)
   app/src/main/java/md/zennotes/
-    MainActivity.java     registers ShareInboxPlugin, stashes ACTION_SEND shares
+    MainActivity.java     registers native plugins, stashes ACTION_SEND shares
+    DirectUploadPlugin.java streams signed object PUTs on Android 7+
     ShareInboxPlugin.java Android ShareInbox (same jsName/contract as iOS)
 ```
 
@@ -143,7 +146,7 @@ Key decisions (all forced by "don't modify the zennotes repo"):
 
 ```sh
 npm install
-npm run sync              # vite build + cap sync android
+npm run sync              # prepare pinned source + vite build + cap sync android
 npx cap open android      # open in Android Studio, or:
 cd android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 \
   ANDROID_HOME=/opt/homebrew/share/android-commandlinetools \
@@ -157,8 +160,10 @@ points at the SDK. Dev loop against a browser (no emulator): `npm run dev` —
 Capacitor plugins are absent in a plain browser, so vault I/O won't work; use
 the emulator for real testing.
 
-`npm run upstream` reports what changed in the zennotes repo since the
-`.zennotes-commit` stamp and typechecks the bridge against current source.
+`npm run upstream` verifies the generated checkout matches `.zennotes-commit`
+and typechecks the bridge against that exact source. To adopt a newer core,
+update the pin to a reviewed full commit SHA and commit it with the dependent
+mobile changes.
 
 ## Boot-order gotcha (load-bearing)
 
@@ -188,6 +193,27 @@ secure storage, links or creates a cloud vault, runs the shared offline-first
 sync engine, and exposes backups, note-level restore, publishing, and
 automatic sync on app foreground and local changes. Local vaults, SAF folders,
 and self-hosted workspaces continue to work without an account or subscription.
+Files larger than the 5 MiB inline limit use Cloud's signed object-storage
+upload flow. `DirectUploadPlugin` streams decoded bytes without loading a
+second binary copy, works back to minSdk 24, rejects redirects and unsafe URLs,
+and never receives the Cloud account token.
+
+## Release verification
+
+Pull requests and `main` run bridge tests, strict filesystem tests, a
+pinned-source typecheck, production dependency audits for both repositories,
+a Capacitor sync, native unit tests, Android lint, debug assembly, and an
+emulator launch smoke test. Dependabot opens weekly npm, Gradle, and GitHub
+Actions updates.
+
+The scheduled `Cloud direct-upload E2E` workflow verifies the deployed API,
+signed object upload, completion, manifest, and cleanup with a deterministic
+6 MiB file. Configure these repository secrets before enabling it:
+
+- `ZENNOTES_CLOUD_E2E_BASE_URL` — the HTTPS production or staging origin.
+- `ZENNOTES_CLOUD_E2E_TOKEN` — a dedicated active-device token with
+  `sync:read` and `sync:write`, Cloud Sync access, and room for one temporary
+  vault. Rotate it independently from human accounts.
 
 ## Not yet built
 

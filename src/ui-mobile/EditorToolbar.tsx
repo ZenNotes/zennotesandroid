@@ -17,6 +17,7 @@ import { openSearchPanel } from '@codemirror/search'
 import { EditorSelection } from '@codemirror/state'
 import { useStore } from '@zennotes/app-core/store'
 import { setBlockType, toggleWrap, wrapLink } from '@zennotes/app-core/lib/cm-format'
+import { promptAttachFiles } from './attach'
 
 function view(): EditorView | null {
   return useStore.getState().editorViewRef
@@ -81,6 +82,14 @@ const BUTTONS: ToolButton[] = [
       const v = view()
       if (v) openSearchPanel(v)
     }
+  },
+  {
+    key: 'attach',
+    label: 'Attach file',
+    d: 'M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l8.57-8.57A4 4 0 0118 8.84l-8.59 8.57a2 2 0 01-2.83-2.83l8.49-8.48',
+    // No withView: the system document picker takes over the screen anyway;
+    // the insertion path refocuses the editor when the pick lands (#690).
+    run: () => promptAttachFiles()
   },
   {
     key: 'todo',

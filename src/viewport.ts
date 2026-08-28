@@ -88,6 +88,10 @@ export function setLayoutMode(mode: LayoutMode): void {
  *  default visible chrome. */
 export const HIDE_STATUS_BAR_KEY = 'zn:hide-status-bar'
 
+/** localStorage key for the swipe-gesture assignments (#24); JSON, see
+ *  ui-mobile/gestures.ts. Mirrored natively for the same reason as above. */
+export const GESTURES_KEY = 'zn:gestures'
+
 
 /** Publish the current decision to CSS. Safe to call repeatedly. */
 export function syncPhoneClass(): void {

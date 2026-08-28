@@ -1,0 +1,95 @@
+name: Mobile CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: TypeScript, source pin, and Android build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install mobile dependencies
+        run: npm ci
+
+      - name: Prepare exact ZenNotes source
+        run: npm run source:prepare
+
+      - name: Reject high-severity production advisories
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm --prefix .zennotes-source audit --omit=dev --audit-level=high
+
+      - name: Test and typecheck bridges
+        run: |
+          npm test
+          npm run typecheck
+          npm run upstream
+
+      - name: Build and sync Android project
+        run: npm run sync
+
+      - name: Run native unit tests, lint, and assemble
+        working-directory: android
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+
+  emulator-smoke:
+    name: Android emulator launch
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build and sync Android project
+        run: |
+          npm ci
+          npm run sync
+
+      - name: Launch app and run instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          disable-animations: true
+          # The runner's own wait accepts half-booted VMs (system services
+          # down); the gate script holds the tests until they answer.
+          script: |
+            sh tooling/ci-wait-for-emulator.sh
+            cd android && ./gradlew --no-daemon :app:connectedDebugAndroidTest

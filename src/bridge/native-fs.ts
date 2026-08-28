@@ -20,6 +20,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { Directory, Encoding, Filesystem, type FileInfo } from '@capacitor/filesystem'
 import { ensureDownloaded } from './icloud'
+import { isNotFoundError } from './fs-errors'
 
 export const VAULTS_DIR = 'ZenNotes'
 
@@ -292,15 +293,37 @@ export class NativeFs {
 
   async readdir(relPath: string): Promise<FileInfo[]> {
     try {
-      if (this.saf) {
-        const res = await SafFs.readdir({ root: this.cloudRootUri!, path: relPath })
-        return res.files
-      }
-      const res = await Filesystem.readdir(this.loc(relPath))
-      if (!this.cloudRootUri) return res.files
-      return mapICloudStubs(res.files)
+      return await this.readdirStrict(relPath)
     } catch {
       return []
+    }
+  }
+
+  /** Sync-grade listing: unreadable must never become empty, because an
+   *  empty scan would plan deletion for every tracked item in the folder. */
+  async readdirStrict(relPath: string): Promise<FileInfo[]> {
+    if (this.saf) {
+      const res = await SafFs.readdir({ root: this.cloudRootUri!, path: relPath })
+      return res.files
+    }
+    const res = await Filesystem.readdir(this.loc(relPath))
+    if (!this.cloudRootUri) return res.files
+    return mapICloudStubs(res.files)
+  }
+
+  /** Sync-grade stat: null means the native provider verified that the path
+   *  is absent. Permissions, provider failures, and timeouts propagate. */
+  async statVerified(relPath: string): Promise<'file' | 'directory' | null> {
+    try {
+      if (this.saf) {
+        const result = await SafFs.stat({ root: this.cloudRootUri!, path: relPath })
+        return result.type === 'directory' ? 'directory' : 'file'
+      }
+      const result = await Filesystem.stat(this.loc(relPath))
+      return result.type === 'directory' ? 'directory' : 'file'
+    } catch (error) {
+      if (!isNotFoundError(error)) throw error
+      return null
     }
   }
 

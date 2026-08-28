@@ -7,7 +7,7 @@ import react from '@vitejs/plugin-react'
 // The ZenNotes monorepo is consumed read-only, straight from source, the same
 // way apps/web does it (aliases into packages/*). Nothing in that repo is
 // modified by this project.
-const ZENNOTES = resolve(__dirname, '../../opensource/zennotes')
+const ZENNOTES = resolve(__dirname, '.zennotes-source')
 
 // app-core's custom-code-language engine imports the oniguruma wasm as
 // `?url`. Inline it as a data URL (same plugin as apps/web) so the lazily

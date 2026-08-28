@@ -88,4 +88,8 @@ jobs:
           api-level: 35
           arch: x86_64
           disable-animations: true
-          script: cd android && ./gradlew --no-daemon :app:connectedDebugAndroidTest
+          # The runner's own wait accepts half-booted VMs (system services
+          # down); the gate script holds the tests until they answer.
+          script: |
+            sh tooling/ci-wait-for-emulator.sh
+            cd android && ./gradlew --no-daemon :app:connectedDebugAndroidTest

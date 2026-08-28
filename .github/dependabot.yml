@@ -21,8 +21,10 @@ updates:
       # the pin's versions too; majors are never a drive-by.
       - dependency-name: "@codemirror/*"
         update-types: ["version-update:semver-major"]
+      # katex is 0.x: a "minor" bump (0.16 -> 0.18) leaves the ^0.16 range the
+      # pinned app-core declares, so only patches may move on their own.
       - dependency-name: katex
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: mermaid
         update-types: ["version-update:semver-major"]
       - dependency-name: jsxgraph

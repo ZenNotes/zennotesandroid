@@ -37,7 +37,10 @@ export function promptAttachFiles(): void {
   input.type = 'file'
   input.multiple = true
   input.className = INPUT_CLASS
-  input.style.display = 'none'
+  // Not display:none — WebKit (the iOS shell) declines to present the picker
+  // for an input that isn't rendered; Android's WebView doesn't care, but the
+  // two shells share this file line for line. Off-screen and transparent.
+  input.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none'
   document.body.appendChild(input)
 
   input.addEventListener('cancel', () => input.remove())

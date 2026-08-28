@@ -1,5 +1,5 @@
 import { Preferences } from '@capacitor/preferences'
-import { HIDE_STATUS_BAR_KEY, LAYOUT_MODE_KEY } from './viewport'
+import { GESTURES_KEY, HIDE_STATUS_BAR_KEY, LAYOUT_MODE_KEY } from './viewport'
 
 const WEB_PREFERENCES_KEY = 'zen:prefs:v2'
 const NATIVE_PREFERENCES_KEY = 'zn-app-preferences-v2'
@@ -8,10 +8,13 @@ const NATIVE_PREFERENCES_KEY = 'zn-app-preferences-v2'
 const NATIVE_LAYOUT_MODE_KEY = 'zn-layout-mode'
 // The fullscreen flag (#22) mirrors for the same durability reason.
 const NATIVE_HIDE_STATUS_BAR_KEY = 'zn-hide-status-bar'
+// The swipe-gesture assignments (#24) ride along too.
+const NATIVE_GESTURES_KEY = 'zn-gestures'
 const MIRRORED_KEYS: Record<string, string> = {
   [WEB_PREFERENCES_KEY]: NATIVE_PREFERENCES_KEY,
   [LAYOUT_MODE_KEY]: NATIVE_LAYOUT_MODE_KEY,
-  [HIDE_STATUS_BAR_KEY]: NATIVE_HIDE_STATUS_BAR_KEY
+  [HIDE_STATUS_BAR_KEY]: NATIVE_HIDE_STATUS_BAR_KEY,
+  [GESTURES_KEY]: NATIVE_GESTURES_KEY
 }
 
 let persistenceQueue = Promise.resolve()
@@ -72,6 +75,14 @@ async function restoreNativePreferences(): Promise<void> {
       localStorage.setItem(HIDE_STATUS_BAR_KEY, nativeStatusBar.value)
     } else if (webStatusBar) {
       await Preferences.set({ key: NATIVE_HIDE_STATUS_BAR_KEY, value: webStatusBar })
+    }
+
+    const nativeGestures = await Preferences.get({ key: NATIVE_GESTURES_KEY })
+    const webGestures = localStorage.getItem(GESTURES_KEY)
+    if (nativeGestures.value) {
+      localStorage.setItem(GESTURES_KEY, nativeGestures.value)
+    } else if (webGestures) {
+      await Preferences.set({ key: NATIVE_GESTURES_KEY, value: webGestures })
     }
   } catch {
     // Continue with WebView storage when native preferences are unavailable.

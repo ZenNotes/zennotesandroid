@@ -48,6 +48,8 @@ import {
   firstMatchColumn,
   folderForRelativePath,
   hiddenPrimaryRootNames,
+  importedAssetMarkdown,
+  importedAssetRelPath,
   isExcalidrawPath,
   isMarkdownPath,
   joinPath,
@@ -1228,20 +1230,27 @@ export class MobileVault {
     return { name: filename, path: rel, markdown: `![[${rel}]]`, kind: 'image' }
   }
 
-  async importDroppedFile(notePath: string, file: File): Promise<ImportedAsset> {
-    const filename = await this.uniqueFilename('', file.name)
+  /**
+   * An attached file lands in `assets/`, the same folder a pasted image goes to
+   * (`importPastedImage`) and the same one the cloud vault uploads to, and is
+   * linked by vault-relative path.
+   *
+   * It used to be written to the vault ROOT and linked with a hand-built
+   * `'../'.repeat(depth)` path, so attaching a file scattered images among the
+   * notes and produced `![name](<../name.jpg>)` (reported on Discord by xenin).
+   * Desktop had exactly this bug and fixed it in #377; the port was missed
+   * here. Images take the wikilink form so every surface resolves them the same
+   * way paste already does.
+   */
+  async importDroppedFile(_notePath: string, file: File): Promise<ImportedAsset> {
     const bytes = new Uint8Array(await file.arrayBuffer())
-    await this.fs.writeBase64(filename, bytesToBase64(bytes))
+    await this.fs.mkdir(ASSETS_DIR)
+    const filename = await this.uniqueFilename(ASSETS_DIR, file.name)
+    const rel = importedAssetRelPath(filename)
+    await this.fs.writeBase64(rel, bytesToBase64(bytes))
     const kind = classifyImportedAsset(filename)
-    const noteDir = dirName(resolveSafeRel(notePath))
-    const relFromNote = noteDir
-      ? `${'../'.repeat(noteDir.split('/').length)}${filename}`
-      : filename
-    const dest = `<${relFromNote.replace(/>/g, '%3E')}>`
-    const markdown =
-      kind === 'image' ? `![${stemName(filename)}](${dest})` : `[${filename}](${dest})`
-    emitVaultChange({ kind: 'add', path: filename, folder: 'inbox', scope: 'content' })
-    return { name: filename, path: filename, markdown, kind }
+    emitVaultChange({ kind: 'add', path: rel, folder: 'inbox', scope: 'content' })
+    return { name: filename, path: rel, markdown: importedAssetMarkdown(rel, filename, kind), kind }
   }
 
   async renameAsset(relPath: string, nextName: string): Promise<AssetMeta> {

@@ -3,13 +3,28 @@
  *
  * A leaf module on purpose: `vault-core` reaches `@shared/*` through a Vite
  * alias, which plain `node --test` cannot resolve, so nothing there is
- * unit-testable. These two rules are the ones a bug hid in, so they live where
- * a test can reach them. `vault-core` re-exports `ASSETS_DIR`, so every
- * existing importer is unaffected.
+ * unit-testable. These rules are where the attachment bugs hid, so they live
+ * where a test can reach them. The vault core re-exports them so existing
+ * importers remain unaffected.
  */
 import type { ImportedAssetKind } from '@bridge-contract/ipc'
 
 export const ASSETS_DIR = 'assets'
+
+/** Keep imported names valid as both filenames and wikilink targets. Pasted
+ * images already apply this rule: brackets, anchors, and pipes can terminate
+ * or retarget a wikilink, while path/control characters are unsafe on one or
+ * more supported filesystems. */
+export function importedAssetFilename(filename: string): string {
+  const segments = filename.split(/[\\/]/)
+  const leaf = segments[segments.length - 1] ?? ''
+  const safe = leaf
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\\/:%\u0000-\u001f*?"<>|[\]#^]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return safe && safe !== '.' && safe !== '..' ? safe : 'file'
+}
 
 /** Every imported file lands in `assets/`, whichever way it arrived. Paste,
  *  attach and the cloud upload agree on this, so a link written by one is

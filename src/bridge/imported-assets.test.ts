@@ -1,7 +1,23 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { assetUploadOptions } from './remote-client.ts'
-import { importedAssetMarkdown, importedAssetRelPath } from './imported-assets.ts'
+import {
+  importedAssetFilename,
+  importedAssetMarkdown,
+  importedAssetRelPath
+} from './imported-assets.ts'
+
+describe('importedAssetFilename', () => {
+  it('scrubs characters that would break or retarget a wikilink embed', () => {
+    assert.equal(importedAssetFilename('diagram [v2] #3.png'), 'diagram -v2- -3.png')
+    assert.equal(importedAssetFilename('diagram%5D^draft|wide.png'), 'diagram-5D-draft-wide.png')
+  })
+
+  it('drops path components and control characters before writing a file', () => {
+    assert.equal(importedAssetFilename('../folder/line\nbreak.png'), 'line-break.png')
+    assert.equal(importedAssetFilename('..'), 'file')
+  })
+})
 
 describe('importedAssetRelPath', () => {
   it('puts an attached file in assets/, never the vault root', () => {
@@ -72,14 +88,24 @@ describe('assetUploadOptions', () => {
     assert.match(contentType, /^multipart\/form-data; boundary=----ZenNotesUpload[0-9a-f]+$/)
   })
 
-  it('strips quotes from the filename so the part header cannot be broken', () => {
+  it('sanitizes the filename used in the native multipart header', () => {
     const quoted = assetUploadOptions({
       url: 'https://notes.example.test/api/assets/upload',
       fileName: 'we"ird".png',
       base64Data: 'AQID'
     })
     const file = quoted.data[1] as { fileName: string }
-    assert.equal(file.fileName, 'weird.png')
+    assert.equal(file.fileName, 'we-ird-.png')
+  })
+
+  it('strips newlines from the filename so it cannot inject multipart headers', () => {
+    const injected = assetUploadOptions({
+      url: 'https://notes.example.test/api/assets/upload',
+      fileName: 'pic.png"\r\nX-Injected: yes',
+      base64Data: 'AQID'
+    })
+    const file = injected.data[1] as { fileName: string }
+    assert.equal(file.fileName, 'pic.png---X-Injected- yes')
   })
 
   it('defaults the target directory to empty rather than sending undefined', () => {

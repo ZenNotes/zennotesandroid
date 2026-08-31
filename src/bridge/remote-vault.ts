@@ -34,6 +34,7 @@ import type { CustomTemplateFile, WriteTemplateInput } from '@bridge-contract/te
 import type { ImportedAsset } from '@shared/ipc'
 import { createAbsenceAwareReader } from '@shared/remote-absence'
 import { emitVaultChange } from './events'
+import { importedAssetFilename } from './imported-assets'
 import { RemoteClient, RemoteRequestError } from './remote-client'
 
 function remoteOnly(what: string): never {
@@ -347,7 +348,11 @@ export class RemoteVault {
 
   async importDroppedFile(_notePath: string, file: File): Promise<ImportedAsset> {
     const bytes = new Uint8Array(await file.arrayBuffer())
-    const meta = await this.client.uploadAsset(file.name, bytesToBase64(bytes), 'assets')
+    const meta = await this.client.uploadAsset(
+      importedAssetFilename(file.name),
+      bytesToBase64(bytes),
+      'assets'
+    )
     const isImage = /\.(png|jpe?g|gif|webp|svg|heic)$/i.test(meta.name)
     emitVaultChange({ kind: 'add', path: meta.path, folder: 'inbox', scope: 'content' })
     return {

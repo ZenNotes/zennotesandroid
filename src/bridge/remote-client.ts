@@ -26,6 +26,7 @@ import type {
   VaultTextSearchMatch
 } from '@shared/ipc'
 import type { VaultTask } from '@shared/tasks'
+import { importedAssetFilename } from './imported-assets.ts'
 
 export interface RemoteClientOptions {
   baseUrl: string
@@ -80,7 +81,9 @@ export function assetUploadOptions(request: AssetUploadRequest) {
       {
         type: 'base64File',
         key: 'file',
-        fileName: request.fileName.replace(/"/g, ''),
+        // Capacitor inserts this value directly into Content-Disposition on
+        // both native platforms, so use the same safe name written to disk.
+        fileName: importedAssetFilename(request.fileName),
         contentType: 'application/octet-stream',
         value: request.base64Data
       }

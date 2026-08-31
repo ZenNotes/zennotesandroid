@@ -48,6 +48,7 @@ import {
   firstMatchColumn,
   folderForRelativePath,
   hiddenPrimaryRootNames,
+  importedAssetFilename,
   importedAssetMarkdown,
   importedAssetRelPath,
   isExcalidrawPath,
@@ -1245,7 +1246,7 @@ export class MobileVault {
   async importDroppedFile(_notePath: string, file: File): Promise<ImportedAsset> {
     const bytes = new Uint8Array(await file.arrayBuffer())
     await this.fs.mkdir(ASSETS_DIR)
-    const filename = await this.uniqueFilename(ASSETS_DIR, file.name)
+    const filename = await this.uniqueFilename(ASSETS_DIR, importedAssetFilename(file.name))
     const rel = importedAssetRelPath(filename)
     await this.fs.writeBase64(rel, bytesToBase64(bytes))
     const kind = classifyImportedAsset(filename)

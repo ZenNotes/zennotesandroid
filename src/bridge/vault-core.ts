@@ -16,7 +16,12 @@ import { ASSETS_DIR } from './imported-assets'
 
 // Re-exported so every existing importer keeps reaching them here; they live in
 // a leaf module because this one cannot be loaded by `node --test`.
-export { ASSETS_DIR, importedAssetMarkdown, importedAssetRelPath } from './imported-assets'
+export {
+  ASSETS_DIR,
+  importedAssetFilename,
+  importedAssetMarkdown,
+  importedAssetRelPath
+} from './imported-assets'
 
 export const FOLDERS: NoteFolder[] = ['inbox', 'quick', 'archive', 'trash']
 export const SYSTEM_FOLDERS = new Set<string>(FOLDERS)

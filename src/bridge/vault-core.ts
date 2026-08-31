@@ -12,10 +12,19 @@ import {
   systemFolderForDirName,
   type SystemFolderPaths
 } from '@shared/system-folder-paths'
+import { ASSETS_DIR } from './imported-assets'
+
+// Re-exported so every existing importer keeps reaching them here; they live in
+// a leaf module because this one cannot be loaded by `node --test`.
+export {
+  ASSETS_DIR,
+  importedAssetFilename,
+  importedAssetMarkdown,
+  importedAssetRelPath
+} from './imported-assets'
 
 export const FOLDERS: NoteFolder[] = ['inbox', 'quick', 'archive', 'trash']
 export const SYSTEM_FOLDERS = new Set<string>(FOLDERS)
-export const ASSETS_DIR = 'assets'
 export const PRIMARY_ATTACHMENTS_DIR = 'attachements'
 export const LEGACY_ATTACHMENTS_DIRS = [PRIMARY_ATTACHMENTS_DIR, '_assets']
 export const ATTACHMENTS_DIRS = [ASSETS_DIR, ...LEGACY_ATTACHMENTS_DIRS]

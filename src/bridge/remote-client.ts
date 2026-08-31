@@ -26,6 +26,7 @@ import type {
   VaultTextSearchMatch
 } from '@shared/ipc'
 import type { VaultTask } from '@shared/tasks'
+import { importedAssetFilename } from './imported-assets.ts'
 
 export interface RemoteClientOptions {
   baseUrl: string
@@ -40,6 +41,58 @@ const TIMEOUT_MS = 15000
  * load-bearing for the absence-aware database reader in remote-vault.ts,
  * which must never read "the request never arrived" as "the file is absent".
  */
+export interface AssetUploadRequest {
+  url: string
+  fileName: string
+  base64Data: string
+  targetDir?: string
+}
+
+/**
+ * The multipart upload for an attachment.
+ *
+ * This used to hand-build the body as one string, with the file part carrying
+ * `Content-Transfer-Encoding: base64` and the base64 text as its content. That
+ * header is a MIME construct: RFC 7578 dropped it from multipart/form-data, and
+ * Go's `mime/multipart` (what the server parses with) does not honour it. The
+ * server therefore wrote the base64 TEXT to disk as the file's bytes, so an
+ * attachment arrived in `assets/` with the right name, about a third larger
+ * than the original, and unreadable by anything (zennotesandroid#40).
+ *
+ * The bytes have to stay base64 to cross the native bridge at all, since a
+ * CapacitorHttp string body is written out as UTF-8 and would mangle anything
+ * above 0x7F. `dataType: 'formData'` is the supported way through: both native
+ * layers decode a `base64File` entry and write the raw bytes into the part
+ * (Android `CapacitorHttpUrlConnection.writeFormDataRequestBody`, iOS
+ * `CapacitorUrlRequest.getRequestDataFromFormData`), which is what the server
+ * expects. The sibling direct-object upload already used the same mechanism
+ * with `dataType: 'file'`.
+ */
+export function assetUploadOptions(request: AssetUploadRequest) {
+  // Both native layers reuse the boundary from the header when it carries one,
+  // so the body and the header cannot disagree.
+  const boundary = `----ZenNotesUpload${Date.now().toString(16)}`
+  return {
+    url: request.url,
+    headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+    dataType: 'formData' as const,
+    data: [
+      { type: 'string', key: 'dir', value: request.targetDir ?? '' },
+      {
+        type: 'base64File',
+        key: 'file',
+        // Capacitor inserts this value directly into Content-Disposition on
+        // both native platforms, so use the same safe name written to disk.
+        fileName: importedAssetFilename(request.fileName),
+        contentType: 'application/octet-stream',
+        value: request.base64Data
+      }
+    ],
+    connectTimeout: TIMEOUT_MS,
+    readTimeout: TIMEOUT_MS
+  }
+}
+
 export class RemoteRequestError extends Error {
   readonly status: number
 
@@ -292,29 +345,18 @@ export class RemoteClient {
     return { base64: response.data, mimeType: contentType }
   }
 
-  /** Multipart upload — CapacitorHttp has no FormData bridge, so send the
-   *  body prebuilt with an explicit boundary. */
   async uploadAsset(fileName: string, base64Data: string, targetDir = ''): Promise<AssetMeta> {
-    const boundary = `----ZenNotesUpload${Date.now().toString(16)}`
-    const head =
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="dir"\r\n\r\n${targetDir}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="file"; filename="${fileName.replace(/"/g, '')}"\r\n` +
-      `Content-Type: application/octet-stream\r\n` +
-      `Content-Transfer-Encoding: base64\r\n\r\n`
-    const tail = `\r\n--${boundary}--\r\n`
+    const options = assetUploadOptions({
+      url: `${this.baseUrl}/api/assets/upload`,
+      fileName,
+      base64Data,
+      targetDir
+    })
     let response: HttpResponse
     try {
       response = await CapacitorHttp.post({
-        url: `${this.baseUrl}/api/assets/upload`,
-        headers: {
-          ...this.headers(),
-          'Content-Type': `multipart/form-data; boundary=${boundary}`
-        },
-        data: head + base64Data + tail,
-        connectTimeout: TIMEOUT_MS,
-        readTimeout: TIMEOUT_MS
+        ...options,
+        headers: { ...this.headers(), ...options.headers }
       })
     } catch (error) {
       throw new Error(connectionErrorMessage(this.baseUrl, error))

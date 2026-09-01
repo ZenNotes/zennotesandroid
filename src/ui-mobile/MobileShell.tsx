@@ -66,11 +66,13 @@ import {
 } from './tags-empty-state'
 import { siblingNotesInDrawerOrder } from './note-order'
 import { getPinnedNotes, loadPins } from './pins'
+import { vaultSettingsAccessForLayout } from './vault-settings-access'
 import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
 import {
-  applyStatusBarPreference,
-  isStatusBarHidden,
-  setStatusBarHidden
+  applySystemBarsPreference,
+  getSystemBarsMode,
+  setSystemBarsMode,
+  type SystemBarsMode
 } from './fullscreen'
 import {
   getGesturePrefs,
@@ -2329,12 +2331,37 @@ function useContextMenuCleanup(): void {
 
 /**
  * Settings → Vault → Location grows the mobile vault features (the desktop
- * switcher and remote-workspace sections are runtime-gated off there): a
- * quick-switch list of every reachable vault when there is more than one,
- * plus "New Vault…" and "Remote Vault…" actions. Mounted as a React island
- * inside the location card (mobilizer pattern, no app-core changes).
- * Switching keeps Settings open — the location card updates in place.
+ * switcher and remote-workspace sections are runtime-gated off there): the
+ * phone layout gets a quick-switch list of every reachable vault plus
+ * "New Vault…" and "Manage…" actions; the wider tablet layout keeps a compact
+ * "Manage…" entry point into the same canonical manager, which is where remote
+ * (self-hosted) vaults are added. Both are React islands inside the location
+ * card (mobilizer pattern, no app-core changes). Switching keeps Settings
+ * open — the location card updates in place.
  */
+const SETTINGS_VAULT_ACTION_CLASS =
+  'shrink-0 rounded-xl border border-paper-300/70 bg-paper-100/80 px-3.5 py-2 text-xs font-medium text-ink-800'
+
+/** The manager is the one canonical surface — rename, move, delete, remote,
+ *  external folders all live there. It replaces Settings rather than stacking
+ *  under it. */
+function openVaultManagerFromSettings(): void {
+  useStore.getState().setSettingsOpen(false)
+  window.setTimeout(() => openMobileSheet('vaults'), 30)
+}
+
+function SettingsVaultManageButton(): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className={SETTINGS_VAULT_ACTION_CLASS}
+      onClick={openVaultManagerFromSettings}
+    >
+      Manage…
+    </button>
+  )
+}
+
 function SettingsVaultQuickSwitch(): React.JSX.Element {
   const currentName = useStore((s) => s.vault?.name ?? null)
   const currentRoot = useStore((s) => s.vault?.root ?? '')
@@ -2423,7 +2450,7 @@ function SettingsVaultQuickSwitch(): React.JSX.Element {
       <div className="zn-settings-vaults-btns">
         <button
           type="button"
-          className="rounded-xl border border-paper-300/70 bg-paper-100/80 px-3.5 py-2 text-xs font-medium text-ink-800"
+          className={SETTINGS_VAULT_ACTION_CLASS}
           disabled={busy !== null}
           onClick={() =>
             run('new', () => promptNewVault(currentTier === 'icloud' ? 'icloud' : 'local'))
@@ -2433,15 +2460,9 @@ function SettingsVaultQuickSwitch(): React.JSX.Element {
         </button>
         <button
           type="button"
-          className="rounded-xl border border-paper-300/70 bg-paper-100/80 px-3.5 py-2 text-xs font-medium text-ink-800"
+          className={SETTINGS_VAULT_ACTION_CLASS}
           disabled={busy !== null}
-          onClick={() => {
-            // The manager is the one canonical surface — rename, move, delete,
-            // remote, external folders all live there. It replaces Settings
-            // rather than stacking under it.
-            useStore.getState().setSettingsOpen(false)
-            window.setTimeout(() => openMobileSheet('vaults'), 30)
-          }}
+          onClick={openVaultManagerFromSettings}
         >
           Manage…
         </button>
@@ -2452,7 +2473,7 @@ function SettingsVaultQuickSwitch(): React.JSX.Element {
 
 function useVaultSettingsRows(): void {
   useEffect(() => {
-    if (!isPhoneWidth()) return
+    const access = vaultSettingsAccessForLayout(isPhoneWidth())
     let container: HTMLElement | null = null
     let root: ReturnType<typeof ReactDOM.createRoot> | null = null
     const sync = (): void => {
@@ -2468,20 +2489,31 @@ function useVaultSettingsRows(): void {
       if (container?.parentElement === host) return
       if (!container) {
         container = document.createElement('div')
-        // This wrapper — not the list inside it — is the row's flex child, so
-        // it is what has to claim the full line (see mobile.css).
-        container.className = 'zn-settings-vaults-host'
+        // The phone wrapper — not the list inside it — is the row's flex child,
+        // so it is what has to claim the full line (see mobile.css). On a
+        // tablet, display: contents makes the compact Manage button a peer of
+        // the row's own Change… button.
+        container.className =
+          access === 'quick-switch'
+            ? 'zn-settings-vaults-host'
+            : 'zn-settings-vaults-manage-host'
         root = ReactDOM.createRoot(container)
-        root.render(<SettingsVaultQuickSwitch />)
+        root.render(
+          access === 'quick-switch' ? <SettingsVaultQuickSwitch /> : <SettingsVaultManageButton />
+        )
       }
-      // The host is the desktop two-column row (label + "Change…" button),
-      // which the phone stylesheet wraps into a stack. Mount between the label
-      // and the row's own buttons, so the card reads location → picker list →
-      // actions and mobile.css can hide those buttons in favor of the
-      // island's own action group.
-      const firstBtn = host.querySelector('button')
-      if (firstBtn) host.insertBefore(container, firstBtn)
-      else host.appendChild(container)
+      if (access === 'quick-switch') {
+        // The host is the desktop two-column row (label + "Change…" button),
+        // which the phone stylesheet wraps into a stack. Mount between the
+        // label and the row's own buttons, so the card reads location →
+        // picker list → actions and mobile.css can hide those buttons in
+        // favor of the island's own action group.
+        const firstBtn = host.querySelector('button')
+        if (firstBtn) host.insertBefore(container, firstBtn)
+        else host.appendChild(container)
+      } else {
+        host.appendChild(container)
+      }
     }
     const observer = new MutationObserver(() => sync())
     observer.observe(document.body, { childList: true, subtree: true })
@@ -2511,14 +2543,14 @@ const LAYOUT_CHOICES: { mode: LayoutMode; label: string }[] = [
   { mode: 'desktop', label: 'Desktop' }
 ]
 
-/** Assert the status-bar preference at boot and re-assert it on resume:
+/** Assert the system-bars preference at boot and re-assert it on resume:
  *  Android brings the system bars back on some background→foreground paths,
- *  and re-applying a visible bar is a no-op (#22). */
+ *  and re-applying visible bars is a no-op (#22, #42). */
 function useFullscreenChrome(): void {
   useEffect(() => {
-    void applyStatusBarPreference()
+    void applySystemBarsPreference()
     const listener = CapApp.addListener('appStateChange', ({ isActive }) => {
-      if (isActive) void applyStatusBarPreference()
+      if (isActive) void applySystemBarsPreference()
     })
     return () => {
       void listener.then((handle) => handle.remove())
@@ -2526,41 +2558,41 @@ function useFullscreenChrome(): void {
   }, [])
 }
 
-function SettingsStatusBarRow(): React.JSX.Element {
-  const [hidden, setHidden] = useState<boolean>(() => isStatusBarHidden())
-  const choose = (next: boolean): void => {
-    if (next === hidden) return
-    setStatusBarHidden(next)
-    setHidden(next)
+const SYSTEM_BARS_CHOICES: { mode: SystemBarsMode; label: string }[] = [
+  { mode: 'shown', label: 'Shown' },
+  { mode: 'status-hidden', label: 'No status bar' },
+  { mode: 'immersive', label: 'Immersive' }
+]
+
+function SettingsSystemBarsRow(): React.JSX.Element {
+  const [mode, setMode] = useState<SystemBarsMode>(() => getSystemBarsMode())
+  const choose = (next: SystemBarsMode): void => {
+    if (next === mode) return
+    setSystemBarsMode(next)
+    setMode(next)
   }
   return (
     <div className="zn-settings-layout">
       <div className="zn-settings-layout-text">
-        <div className="zn-settings-layout-title">Status bar</div>
+        <div className="zn-settings-layout-title">System bars</div>
         <div className="zn-settings-layout-desc">
-          Hidden gives your notes the whole screen. Swipe down from the top
-          edge to peek at the clock and battery.
+          Hide the status bar for more room, or go immersive to hide the
+          navigation bar too. Swipe from a hidden bar’s edge to peek at it.
         </div>
       </div>
-      <div className="zn-settings-layout-seg" role="radiogroup" aria-label="Status bar">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={!hidden}
-          className={hidden ? '' : 'is-active'}
-          onClick={() => choose(false)}
-        >
-          Shown
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={hidden}
-          className={hidden ? 'is-active' : ''}
-          onClick={() => choose(true)}
-        >
-          Hidden
-        </button>
+      <div className="zn-settings-layout-seg" role="radiogroup" aria-label="System bars">
+        {SYSTEM_BARS_CHOICES.map((choice) => (
+          <button
+            key={choice.mode}
+            type="button"
+            role="radio"
+            aria-checked={mode === choice.mode}
+            className={mode === choice.mode ? 'is-active' : ''}
+            onClick={() => choose(choice.mode)}
+          >
+            {choice.label}
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -2736,7 +2768,7 @@ function useLayoutSettingsRow(): void {
         root.render(
           <>
             <SettingsLayoutRow />
-            <SettingsStatusBarRow />
+            <SettingsSystemBarsRow />
             {isPhoneWidth() && <SettingsGesturesRow />}
           </>
         )

@@ -1878,6 +1878,18 @@
   min-width: 100%;
 }
 
+/* In the tablet settings row, keep only the compact manager entry point. The
+   wrapper disappears from flex layout so its button sits beside Change…
+   instead of forcing the phone quick-switch card into the row. */
+.zn-settings-vaults-manage-host {
+  display: contents;
+}
+
+[data-settings-search-id='vault-location']:has(> .zn-settings-vaults-manage-host) {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}
+
 .zn-settings-vaults {
   padding-top: 0.625rem;
   border-top: 0.5px solid rgb(var(--z-bg-4) / 0.55);

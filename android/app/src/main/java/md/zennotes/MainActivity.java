@@ -35,10 +35,11 @@ public class MainActivity extends BridgeActivity {
         ShareInboxPlugin.stashFromIntent(this, getIntent());
         neutralizeDoubleKeyboardInset();
         installCrashProofWebViewClient();
-        // Fullscreen writing (#22): while the JS shell hides the status bar
-        // via the StatusBar plugin, a swipe from the top edge should peek it
-        // transiently instead of bringing it back for good. The behavior is
-        // inert while the bar is visible, so it is safe to set once here.
+        // Fullscreen writing (#22, #42): while the JS shell hides the
+        // status bar (and, in Immersive Mode, the navigation bar), a swipe
+        // from a hidden bar's edge should peek it transiently instead of
+        // bringing it back for good. The behavior covers all system bars,
+        // is inert while they are visible, and is safe to set once here.
         new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView())
                 .setSystemBarsBehavior(
                         WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);

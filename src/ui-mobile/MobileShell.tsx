@@ -69,9 +69,10 @@ import { getPinnedNotes, loadPins } from './pins'
 import { vaultSettingsAccessForLayout } from './vault-settings-access'
 import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
 import {
-  applyStatusBarPreference,
-  isStatusBarHidden,
-  setStatusBarHidden
+  applySystemBarsPreference,
+  getSystemBarsMode,
+  setSystemBarsMode,
+  type SystemBarsMode
 } from './fullscreen'
 import {
   getGesturePrefs,
@@ -2542,14 +2543,14 @@ const LAYOUT_CHOICES: { mode: LayoutMode; label: string }[] = [
   { mode: 'desktop', label: 'Desktop' }
 ]
 
-/** Assert the status-bar preference at boot and re-assert it on resume:
+/** Assert the system-bars preference at boot and re-assert it on resume:
  *  Android brings the system bars back on some background→foreground paths,
- *  and re-applying a visible bar is a no-op (#22). */
+ *  and re-applying visible bars is a no-op (#22, #42). */
 function useFullscreenChrome(): void {
   useEffect(() => {
-    void applyStatusBarPreference()
+    void applySystemBarsPreference()
     const listener = CapApp.addListener('appStateChange', ({ isActive }) => {
-      if (isActive) void applyStatusBarPreference()
+      if (isActive) void applySystemBarsPreference()
     })
     return () => {
       void listener.then((handle) => handle.remove())
@@ -2557,41 +2558,41 @@ function useFullscreenChrome(): void {
   }, [])
 }
 
-function SettingsStatusBarRow(): React.JSX.Element {
-  const [hidden, setHidden] = useState<boolean>(() => isStatusBarHidden())
-  const choose = (next: boolean): void => {
-    if (next === hidden) return
-    setStatusBarHidden(next)
-    setHidden(next)
+const SYSTEM_BARS_CHOICES: { mode: SystemBarsMode; label: string }[] = [
+  { mode: 'shown', label: 'Shown' },
+  { mode: 'status-hidden', label: 'No status bar' },
+  { mode: 'immersive', label: 'Immersive' }
+]
+
+function SettingsSystemBarsRow(): React.JSX.Element {
+  const [mode, setMode] = useState<SystemBarsMode>(() => getSystemBarsMode())
+  const choose = (next: SystemBarsMode): void => {
+    if (next === mode) return
+    setSystemBarsMode(next)
+    setMode(next)
   }
   return (
     <div className="zn-settings-layout">
       <div className="zn-settings-layout-text">
-        <div className="zn-settings-layout-title">Status bar</div>
+        <div className="zn-settings-layout-title">System bars</div>
         <div className="zn-settings-layout-desc">
-          Hidden gives your notes the whole screen. Swipe down from the top
-          edge to peek at the clock and battery.
+          Hide the status bar for more room, or go immersive to hide the
+          navigation bar too. Swipe from a hidden bar’s edge to peek at it.
         </div>
       </div>
-      <div className="zn-settings-layout-seg" role="radiogroup" aria-label="Status bar">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={!hidden}
-          className={hidden ? '' : 'is-active'}
-          onClick={() => choose(false)}
-        >
-          Shown
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={hidden}
-          className={hidden ? 'is-active' : ''}
-          onClick={() => choose(true)}
-        >
-          Hidden
-        </button>
+      <div className="zn-settings-layout-seg" role="radiogroup" aria-label="System bars">
+        {SYSTEM_BARS_CHOICES.map((choice) => (
+          <button
+            key={choice.mode}
+            type="button"
+            role="radio"
+            aria-checked={mode === choice.mode}
+            className={mode === choice.mode ? 'is-active' : ''}
+            onClick={() => choose(choice.mode)}
+          >
+            {choice.label}
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -2767,7 +2768,7 @@ function useLayoutSettingsRow(): void {
         root.render(
           <>
             <SettingsLayoutRow />
-            <SettingsStatusBarRow />
+            <SettingsSystemBarsRow />
             {isPhoneWidth() && <SettingsGesturesRow />}
           </>
         )

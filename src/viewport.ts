@@ -82,10 +82,12 @@ export function setLayoutMode(mode: LayoutMode): void {
   }
 }
 
-/** localStorage key for the fullscreen (hidden status bar) preference (#22).
- *  Lives here so bootstrap.ts can mirror it natively without importing the
- *  status-bar plugin into the boot path; '1' means hidden, absent means the
- *  default visible chrome. */
+/** localStorage key for the fullscreen preference. Lives here so
+ *  bootstrap.ts can mirror it natively without importing the status-bar
+ *  plugin into the boot path; '1' means hidden status bar (#22),
+ *  'immersive' hides the navigation bar too (#42), absent means the
+ *  default visible chrome. The key name predates immersive mode — kept so
+ *  existing users' mirrored preference survives the upgrade. */
 export const HIDE_STATUS_BAR_KEY = 'zn:hide-status-bar'
 
 /** localStorage key for the swipe-gesture assignments (#24); JSON, see

@@ -106,7 +106,12 @@ import {
   syncMobileCloudVault,
   updateMobileCloudBackupSchedule,
   unlinkMobileCloudVault,
-  deleteMobileCloudVault
+  deleteMobileCloudVault,
+  getMobileCloudConflict,
+  saveMobileCloudConflictDraft,
+  resolveMobileCloudConflict,
+  getMobileCloudBootstrapConflict,
+  resolveMobileCloudBootstrapConflict
 } from './mobile-cloud-sync'
 import { RemoteVault } from './remote-vault'
 import {
@@ -746,6 +751,7 @@ const unsupportedUpdateState: AppUpdateState = {
   transferredBytes: null,
   totalBytes: null,
   bytesPerSecond: null,
+  installable: false,
   message: 'Updates are delivered through the App Store.'
 }
 
@@ -839,6 +845,16 @@ export const mobileBridge: ZenBridge = {
   unlinkCloudVault: () => unlinkMobileCloudVault(activeMobileVault()),
   deleteCloudVault: () => deleteMobileCloudVault(activeMobileVault()),
   syncCloudVault: () => syncMobileCloudVault(activeMobileVault()),
+  getCloudBootstrapConflict: (conflict) =>
+    getMobileCloudBootstrapConflict(activeMobileVault(), conflict),
+  resolveCloudBootstrapConflict: (resolution) =>
+    resolveMobileCloudBootstrapConflict(activeMobileVault(), resolution),
+  getCloudConflict: (conflictId) =>
+    getMobileCloudConflict(activeMobileVault(), conflictId),
+  saveCloudConflictDraft: (conflictId, draftText) =>
+    saveMobileCloudConflictDraft(activeMobileVault(), conflictId, draftText),
+  resolveCloudConflict: (resolution) =>
+    resolveMobileCloudConflict(activeMobileVault(), resolution),
   getCloudSettingsConflict: () => getMobileCloudSettingsConflict(activeMobileVault()),
   resolveCloudSettingsConflict: (choice) =>
     resolveMobileCloudSettingsConflict(activeMobileVault(), choice),
@@ -1120,6 +1136,7 @@ export const mobileBridge: ZenBridge = {
   readExternalFile: async () => notImplemented('readExternalFile'),
   writeExternalFile: async () => notImplemented('writeExternalFile'),
   moveExternalFileToVault: async () => notImplemented('moveExternalFileToVault'),
+  followExternalFileLink: async () => ({ ok: false, error: 'desktop-only' }),
   openMarkdownFile: async () => false,
   openFileDialog: async () => false,
   toggleQuickCapture: async () => {

@@ -7,7 +7,8 @@ import react from '@vitejs/plugin-react'
 // The ZenNotes monorepo is consumed read-only, straight from source, the same
 // way apps/web does it (aliases into packages/*). Nothing in that repo is
 // modified by this project.
-const ZENNOTES = resolve(__dirname, '.zennotes-source')
+const ROOT = import.meta.dirname
+const ZENNOTES = resolve(ROOT, '.zennotes-source')
 
 // app-core's custom-code-language engine imports the oniguruma wasm as
 // `?url`. Inline it as a data URL (same plugin as apps/web) so the lazily
@@ -17,7 +18,7 @@ const ZENNOTES = resolve(__dirname, '.zennotes-source')
 // at build time.
 function onigurumaDataUrl(): Plugin {
   const virtualId = '\0zennotes:oniguruma-wasm-data-url'
-  const wasmPath = createRequire(resolve(__dirname, 'package.json')).resolve(
+  const wasmPath = createRequire(resolve(ROOT, 'package.json')).resolve(
     'vscode-oniguruma/release/onig.wasm'
   )
   return {
@@ -74,7 +75,7 @@ function rendererManualChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-  root: __dirname,
+  root: ROOT,
   base: './',
   resolve: {
     alias: [
@@ -119,7 +120,7 @@ export default defineConfig({
   server: {
     port: 5183,
     fs: {
-      allow: [__dirname, ZENNOTES]
+      allow: [ROOT, ZENNOTES]
     }
   },
   plugins: [onigurumaDataUrl(), react()],

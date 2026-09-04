@@ -7,7 +7,8 @@ import react from '@vitejs/plugin-react'
 // The ZenNotes monorepo is consumed read-only, straight from source, the same
 // way apps/web does it (aliases into packages/*). Nothing in that repo is
 // modified by this project.
-const ZENNOTES = resolve(__dirname, '.zennotes-source')
+const ROOT = import.meta.dirname
+const ZENNOTES = resolve(ROOT, '.zennotes-source')
 
 // app-core's custom-code-language engine imports the oniguruma wasm as
 // `?url`. Inline it as a data URL (same plugin as apps/web) so the lazily
@@ -17,7 +18,7 @@ const ZENNOTES = resolve(__dirname, '.zennotes-source')
 // at build time.
 function onigurumaDataUrl(): Plugin {
   const virtualId = '\0zennotes:oniguruma-wasm-data-url'
-  const wasmPath = createRequire(resolve(__dirname, 'package.json')).resolve(
+  const wasmPath = createRequire(resolve(ROOT, 'package.json')).resolve(
     'vscode-oniguruma/release/onig.wasm'
   )
   return {
@@ -32,6 +33,26 @@ function onigurumaDataUrl(): Plugin {
       const bytes = readFileSync(wasmPath)
       const url = `data:application/wasm;base64,${bytes.toString('base64')}`
       return `export default ${JSON.stringify(url)}`
+    }
+  }
+}
+
+// app-core imports Harper (the desktop and web grammar checker) and its wasm
+// binary. Phones rely on the system keyboard for spelling, the mobile bridge
+// never reports `supportsHarper`, and app-core never loads Harper here, so both
+// imports resolve to an empty module: no 16 MB binary, no harper.js dependency.
+function harperStub(): Plugin {
+  const virtualId = '\0zennotes:harper-stub'
+  return {
+    name: 'zennotes-harper-stub',
+    enforce: 'pre',
+    resolveId(id) {
+      if (id === 'harper.js' || id === 'harper.js/dist/harper_wasm_slim_bg.wasm?url') return virtualId
+      return null
+    },
+    load(id) {
+      if (id !== virtualId) return null
+      return 'export default ""\n'
     }
   }
 }
@@ -74,7 +95,7 @@ function rendererManualChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-  root: __dirname,
+  root: ROOT,
   base: './',
   resolve: {
     alias: [
@@ -119,10 +140,10 @@ export default defineConfig({
   server: {
     port: 5183,
     fs: {
-      allow: [__dirname, ZENNOTES]
+      allow: [ROOT, ZENNOTES]
     }
   },
-  plugins: [onigurumaDataUrl(), react()],
+  plugins: [onigurumaDataUrl(), harperStub(), react()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,

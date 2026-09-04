@@ -24,6 +24,7 @@ import { DEFAULT_VAULT_SETTINGS } from '@bridge-contract/ipc'
 import type { CustomTemplateFile, WriteTemplateInput } from '@bridge-contract/templates'
 import type { VaultTask } from '@shared/tasks'
 import { parseTaskFile, parseTasksFromBody } from '@shared/tasks'
+import { normalizeHarperVaultState } from '@shared/harper-settings'
 import { isFormDirName, isDatabaseInternalPath } from '@shared/databases'
 import { emptyExcalidrawDocument } from '@shared/excalidraw'
 import { DEMO_TOUR_ASSETS, DEMO_TOUR_NOTES } from '@desktop-main/demo-tour-data'
@@ -302,6 +303,11 @@ export class MobileVault {
       systemFolderPaths: normalizeSystemFolderPaths(obj.systemFolderPaths)
     }
     if (obj.view && typeof obj.view === 'object') out.view = obj.view as VaultSettings['view']
+    // Harper's vault dictionary and ignored suggestions are written by desktop
+    // and web; a save from this device must carry them through, or the next
+    // sync erases what the user taught it. Phones never run Harper themselves.
+    const harper = normalizeHarperVaultState(obj.harper)
+    if (harper) out.harper = harper
     return out
   }
 

@@ -37,6 +37,26 @@ function onigurumaDataUrl(): Plugin {
   }
 }
 
+// app-core imports Harper (the desktop and web grammar checker) and its wasm
+// binary. Phones rely on the system keyboard for spelling, the mobile bridge
+// never reports `supportsHarper`, and app-core never loads Harper here, so both
+// imports resolve to an empty module: no 16 MB binary, no harper.js dependency.
+function harperStub(): Plugin {
+  const virtualId = '\0zennotes:harper-stub'
+  return {
+    name: 'zennotes-harper-stub',
+    enforce: 'pre',
+    resolveId(id) {
+      if (id === 'harper.js' || id === 'harper.js/dist/harper_wasm_slim_bg.wasm?url') return virtualId
+      return null
+    },
+    load(id) {
+      if (id !== virtualId) return null
+      return 'export default ""\n'
+    }
+  }
+}
+
 function rendererManualChunk(id: string): string | undefined {
   const normalizedId = id.split('\\').join('/')
 
@@ -123,7 +143,7 @@ export default defineConfig({
       allow: [ROOT, ZENNOTES]
     }
   },
-  plugins: [onigurumaDataUrl(), react()],
+  plugins: [onigurumaDataUrl(), harperStub(), react()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,

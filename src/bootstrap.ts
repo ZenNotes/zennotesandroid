@@ -1,5 +1,5 @@
 import { Preferences } from '@capacitor/preferences'
-import { GESTURES_KEY, HIDE_STATUS_BAR_KEY, LAYOUT_MODE_KEY } from './viewport'
+import { GESTURES_KEY, HIDE_STATUS_BAR_KEY, LAYOUT_MODE_KEY, START_SCREEN_KEY } from './viewport'
 
 const WEB_PREFERENCES_KEY = 'zen:prefs:v2'
 const NATIVE_PREFERENCES_KEY = 'zn-app-preferences-v2'
@@ -10,11 +10,15 @@ const NATIVE_LAYOUT_MODE_KEY = 'zn-layout-mode'
 const NATIVE_HIDE_STATUS_BAR_KEY = 'zn-hide-status-bar'
 // The swipe-gesture assignments (#24) ride along too.
 const NATIVE_GESTURES_KEY = 'zn-gestures'
+// And the Start screen choice (start-screen.ts): read at cold launch, so it
+// must be back in localStorage before main.tsx evaluates.
+const NATIVE_START_SCREEN_KEY = 'zn-start-screen'
 const MIRRORED_KEYS: Record<string, string> = {
   [WEB_PREFERENCES_KEY]: NATIVE_PREFERENCES_KEY,
   [LAYOUT_MODE_KEY]: NATIVE_LAYOUT_MODE_KEY,
   [HIDE_STATUS_BAR_KEY]: NATIVE_HIDE_STATUS_BAR_KEY,
-  [GESTURES_KEY]: NATIVE_GESTURES_KEY
+  [GESTURES_KEY]: NATIVE_GESTURES_KEY,
+  [START_SCREEN_KEY]: NATIVE_START_SCREEN_KEY
 }
 
 let persistenceQueue = Promise.resolve()
@@ -83,6 +87,14 @@ async function restoreNativePreferences(): Promise<void> {
       localStorage.setItem(GESTURES_KEY, nativeGestures.value)
     } else if (webGestures) {
       await Preferences.set({ key: NATIVE_GESTURES_KEY, value: webGestures })
+    }
+
+    const nativeStartScreen = await Preferences.get({ key: NATIVE_START_SCREEN_KEY })
+    const webStartScreen = localStorage.getItem(START_SCREEN_KEY)
+    if (nativeStartScreen.value) {
+      localStorage.setItem(START_SCREEN_KEY, nativeStartScreen.value)
+    } else if (webStartScreen) {
+      await Preferences.set({ key: NATIVE_START_SCREEN_KEY, value: webStartScreen })
     }
   } catch {
     // Continue with WebView storage when native preferences are unavailable.

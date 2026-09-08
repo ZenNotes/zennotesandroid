@@ -20,6 +20,7 @@ import {
 import { configureMobileCloudAuth } from './bridge/mobile-cloud-auth'
 import { maybeRunFirstRunOnboarding } from './ui-mobile/Onboarding'
 import { mountMobileShell } from './ui-mobile/MobileShell'
+import { installHomeGuard } from './ui-mobile/nav'
 import { refreshVault } from './ui-mobile/refresh'
 import { isPhoneViewport, watchPhoneClass } from './viewport'
 import './ui-mobile/mobile.css'
@@ -74,6 +75,12 @@ async function boot(): Promise<void> {
   const appVersion = await loadNativeAppVersion()
   await configureMobileCloudAuth(appVersion)
   installMobileBridge()
+  // FIRST store subscriber, ahead of everything React mounts: the guard
+  // undoes app-core's null-active-tab fallback inside the same notification
+  // pass, and zustand notifies in subscription order — installed any later,
+  // earlier subscribers (the drawer's auto-close on selection, for one) act
+  // on the transient tab before the guard puts Home back.
+  installHomeGuard()
   wireKeyboard()
   wireForegroundRescan()
 

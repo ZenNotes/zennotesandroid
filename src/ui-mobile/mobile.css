@@ -630,6 +630,22 @@
   display: none !important;
 }
 
+/* The drawer's rows answer a custom long-press (action sheet) and swipes;
+   the OS must not start a text selection on the same press — besides the
+   selection handles, a selection gesture can refocus the WebView and
+   app-core's focus heal then refocuses the editor (keyboard up under the
+   sheet, seen on iOS). The search field keeps normal selection. */
+.zn-phone .zn-mobile-drawer {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.zn-phone .zn-mobile-drawer input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* The shell's own navigation drawer. */
 .zn-phone .zn-mobile-drawer {
   position: fixed;
@@ -907,6 +923,81 @@
 .zn-phone .zn-swipe-actions > button.zn-danger {
   color: #fff;
   background: rgb(var(--z-danger, 220 80 80));
+}
+
+/* ---- app-core note rows: swipe + long-press (note-row-gestures.ts) --------
+   Home's Recent list, Quick Notes, Tags, Archive and Trash rows get the
+   drawer rows' gestures from outside. The frame class lands only while a
+   row is displaced, so resting rows keep app-core's exact layout; the
+   action / pin layers are appended into the frame and slide like
+   .zn-swipe-actions / .zn-swipe-pin. */
+.zn-mobile [data-quick-row],
+.zn-mobile [data-tag-row],
+.zn-mobile [data-archive-row],
+.zn-mobile [data-trash-row],
+.zn-mobile li > button[data-home-item] {
+  /* Long-press opens the sheet; the OS must not start a text selection or
+     its callout on the same press. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.zn-mobile .zn-row-swipe {
+  position: relative;
+  overflow: hidden;
+  /* Vertical panning stays native; the tracker claims horizontal itself. */
+  touch-action: pan-y;
+}
+
+.zn-mobile .zn-row-swipe.is-settling > * {
+  transition: transform 180ms ease-out;
+}
+
+.zn-mobile .zn-row-swipe-actions {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  z-index: 2;
+  will-change: transform;
+}
+
+.zn-mobile .zn-row-swipe-actions > button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  width: 72px;
+  font-size: 0.75rem;
+  color: rgb(var(--z-fg));
+  background: rgb(var(--z-bg-3));
+}
+
+.zn-mobile .zn-row-swipe-actions > button svg {
+  width: 19px;
+  height: 19px;
+}
+
+.zn-mobile .zn-row-swipe-actions > button.zn-danger {
+  color: #fff;
+  background: rgb(var(--z-danger, 220 80 80));
+}
+
+.zn-mobile .zn-row-swipe-pin {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: flex;
+  align-items: center;
+  padding-left: 1rem;
+  color: rgb(var(--z-accent));
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: opacity 120ms;
+}
+
+.zn-mobile .zn-row-swipe-pin .is-armed {
+  transform: scale(1.15);
 }
 
 .zn-phone .zn-swipe-pin {

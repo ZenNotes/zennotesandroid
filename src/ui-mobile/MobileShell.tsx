@@ -42,6 +42,10 @@ import { csvPathFromDatabaseTab, formDirFromCsvPath } from '@zennotes/shared-dom
 import { MobileDrawer } from './MobileDrawer'
 import { isDrawerOpen, setDrawerOpen, useDrawerOpen } from './drawer-state'
 import { goHome } from './nav'
+import { installNoteRowGestures, NOTE_ROW_SELECTOR } from './note-row-gestures'
+import { NoteActionSheet } from './note-actions'
+import { installEditorKeyboardScroll } from './editor-keyboard-scroll'
+import { installEditorNativeTyping } from './editor-native-typing'
 import { useYouTubeLiteEmbeds } from './youtube-embed-shim'
 import { VaultsSheet, promptNewVault } from './MobileDrawer'
 import {
@@ -817,6 +821,10 @@ function useLongPressContextMenu(): void {
         return
       }
       if (t.closest('input, textarea')) return
+      // Note rows have their own long-press (note-row-gestures.ts → the note
+      // sheet, which also swallows this contextmenu); app-core's desktop
+      // menu must not open on top of it.
+      if (t.closest(NOTE_ROW_SELECTOR)) return
       if (!t.closest(LONG_PRESS_SURFACES)) return
       void Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {})
       suppressNextClickUntil = Date.now() + 700
@@ -2855,6 +2863,25 @@ function useAboutGitHubLinks(): void {
   }, [])
 }
 
+/**
+ * Long-press, swipe-left actions and swipe-right pin on app-core's note rows
+ * (Home, Quick Notes, Tags, Archive, Trash) — the drawer rows' gestures
+ * everywhere a note is listed (note-row-gestures.ts).
+ */
+function useNoteRowGestures(): void {
+  useEffect(() => installNoteRowGestures(), [])
+}
+
+/** Caret stays above the keyboard's formatting toolbar (editor-keyboard-scroll.ts). */
+function useEditorKeyboardScroll(): void {
+  useEffect(() => installEditorKeyboardScroll(), [])
+}
+
+/** The keyboard's autocorrect / suggestions in the note body (editor-native-typing.ts). */
+function useEditorNativeTyping(): void {
+  useEffect(() => installEditorNativeTyping(), [])
+}
+
 function MobileShellRoot(): React.JSX.Element {
   usePhoneLayoutBoot()
   useDrawerAutoClose()
@@ -2862,6 +2889,9 @@ function MobileShellRoot(): React.JSX.Element {
   useWikilinkTapNavigation()
   useBreadcrumbDrawerNav()
   useLongPressContextMenu()
+  useNoteRowGestures()
+  useEditorKeyboardScroll()
+  useEditorNativeTyping()
   usePlaceholderCleanup()
   useTagsEmptyStateHint()
   useEdgeSwipeDrawer()
@@ -2888,6 +2918,7 @@ function MobileShellRoot(): React.JSX.Element {
     <>
       <MobileNav />
       <MobileDrawer />
+      <NoteActionSheet />
       {sheet === 'vaults' && <VaultsSheet onClose={closeMobileSheet} />}
       <MobileEditorToolbar />
       <KanbanMoveSheet />

@@ -16,8 +16,14 @@ import { indentLess, indentMore, redo, undo } from '@codemirror/commands'
 import { openSearchPanel } from '@codemirror/search'
 import { EditorSelection } from '@codemirror/state'
 import { useStore } from '@zennotes/app-core/store'
-import { setBlockType, toggleWrap, wrapLink } from '@zennotes/app-core/lib/cm-format'
+import {
+  setBlockType,
+  toggleWrap,
+  wrapLink,
+  type BlockType
+} from '@zennotes/app-core/lib/cm-format'
 import { promptAttachFiles } from './attach'
+import { revealCaretAboveKeyboardSoon } from './editor-keyboard-scroll'
 
 function view(): EditorView | null {
   return useStore.getState().editorViewRef
@@ -39,13 +45,51 @@ function insertSnippet(v: EditorView, text: string, caretOffset: number): void {
   })
 }
 
+/**
+ * Markers app-core's blockPrefix would put on these block types. app-core's
+ * setBlockType converts existing lines and deliberately skips blank ones, so
+ * on a fresh line Bullet / Checkbox / Heading did nothing until something was
+ * typed (Adib, iPhone device testing 2026-09-08; same code here). Desktop
+ * users just type the marker; on the phone the button IS the way to start a
+ * list.
+ */
+const BLANK_LINE_MARKERS: Partial<Record<BlockType, string>> = {
+  bullet: '- ',
+  todo: '- [ ] ',
+  h1: '# ',
+  h2: '## ',
+  h3: '### '
+}
+
+/**
+ * setBlockType, plus the blank-line case it skips: a collapsed cursor on an
+ * empty (or whitespace-only) line gets the marker inserted after the existing
+ * indentation, caret after the marker. Selections and non-blank lines go
+ * through setBlockType unchanged.
+ */
+function applyBlockType(v: EditorView, type: BlockType): void {
+  const { from, to } = v.state.selection.main
+  const line = v.state.doc.lineAt(from)
+  const marker = BLANK_LINE_MARKERS[type]
+  if (marker !== undefined && from === to && line.text.trim() === '') {
+    // line.text is whitespace-only here, so it doubles as the indent.
+    const insert = line.text + marker
+    v.dispatch({
+      changes: { from: line.from, to: line.to, insert },
+      selection: EditorSelection.cursor(line.from + insert.length)
+    })
+    return
+  }
+  setBlockType(v, type)
+}
+
 /** Cycle the current line's heading level: none → # → ## → ### → none. */
 function cycleHeading(v: EditorView): void {
   const line = v.state.doc.lineAt(v.state.selection.main.from)
   const m = line.text.match(/^(#{1,6})\s/)
   const level = m ? m[1]!.length : 0
   const next = level >= 3 ? 'paragraph' : (['h1', 'h2', 'h3'] as const)[level]!
-  setBlockType(v, next)
+  applyBlockType(v, next)
 }
 
 interface ToolButton {
@@ -95,13 +139,13 @@ const BUTTONS: ToolButton[] = [
     key: 'todo',
     label: 'Checkbox',
     d: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11',
-    run: () => withView((v) => setBlockType(v, 'todo'))
+    run: () => withView((v) => applyBlockType(v, 'todo'))
   },
   {
     key: 'bullet',
     label: 'Bullet list',
     d: 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01',
-    run: () => withView((v) => setBlockType(v, 'bullet'))
+    run: () => withView((v) => applyBlockType(v, 'bullet'))
   },
   {
     key: 'heading',
@@ -222,6 +266,12 @@ export function MobileEditorToolbar(): React.JSX.Element | null {
     }, 100)
     return () => window.clearTimeout(t)
   }, [kbOpen, editing])
+
+  // The toolbar overlays the bottom of the editor: once it's in the DOM, make
+  // sure the caret isn't under it (editor-keyboard-scroll.ts measures it).
+  useEffect(() => {
+    if (visible) revealCaretAboveKeyboardSoon()
+  }, [visible])
 
   if (!visible) return null
 

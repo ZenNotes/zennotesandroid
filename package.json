@@ -1,7 +1,7 @@
 {
   "name": "zennotes-android",
   "private": true,
-  "version": "1.1.15",
+  "version": "1.1.16",
   "type": "module",
   "description": "ZenNotes for Android — Capacitor shell over the ZenNotes app core",
   "homepage": "https://zennotes.org",

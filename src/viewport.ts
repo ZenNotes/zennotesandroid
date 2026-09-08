@@ -94,6 +94,11 @@ export const HIDE_STATUS_BAR_KEY = 'zn:hide-status-bar'
  *  ui-mobile/gestures.ts. Mirrored natively for the same reason as above. */
 export const GESTURES_KEY = 'zn:gestures'
 
+/** localStorage key for where a cold launch lands ('home'; absent = where
+ *  the user left off), see ui-mobile/start-screen.ts. Mirrored natively
+ *  like the other shell prefs. */
+export const START_SCREEN_KEY = 'zn:start-screen'
+
 
 /** Publish the current decision to CSS. Safe to call repeatedly. */
 export function syncPhoneClass(): void {

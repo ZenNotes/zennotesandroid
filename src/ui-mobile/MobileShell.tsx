@@ -42,6 +42,11 @@ import { csvPathFromDatabaseTab, formDirFromCsvPath } from '@zennotes/shared-dom
 import { MobileDrawer } from './MobileDrawer'
 import { isDrawerOpen, setDrawerOpen, useDrawerOpen } from './drawer-state'
 import { goHome } from './nav'
+import { installNoteRowGestures, NOTE_ROW_SELECTOR } from './note-row-gestures'
+import { NoteActionSheet } from './note-actions'
+import { installEditorKeyboardScroll } from './editor-keyboard-scroll'
+import { installEditorNativeTyping } from './editor-native-typing'
+import { getStartScreen, setStartScreen, type StartScreen } from './start-screen'
 import { useYouTubeLiteEmbeds } from './youtube-embed-shim'
 import { VaultsSheet, promptNewVault } from './MobileDrawer'
 import {
@@ -669,8 +674,9 @@ function usePhoneLayoutBoot(): void {
       // activeTab (or no snapshot, or an unreadable one) means Home;
       // anything else keeps the restored note/view on screen. `null` — the
       // witness read somehow still in flight — falls back to Home, the
-      // pre-#2 behavior, rather than guessing a note.
-      if (persistedHome !== false) goHome()
+      // pre-#2 behavior, rather than guessing a note. The Start screen
+      // setting (start-screen.ts) overrides all of that with Home.
+      if (persistedHome !== false || getStartScreen() === 'home') goHome()
       // First run only: land IN the seeded welcome note (reading mode — no
       // keyboard) instead of on a Home screen with nothing to do. Home stays
       // one Back tap away. The pane mode is set through the store before the
@@ -817,6 +823,10 @@ function useLongPressContextMenu(): void {
         return
       }
       if (t.closest('input, textarea')) return
+      // Note rows have their own long-press (note-row-gestures.ts → the note
+      // sheet, which also swallows this contextmenu); app-core's desktop
+      // menu must not open on top of it.
+      if (t.closest(NOTE_ROW_SELECTOR)) return
       if (!t.closest(LONG_PRESS_SURFACES)) return
       void Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {})
       suppressNextClickUntil = Date.now() + 700
@@ -2731,6 +2741,50 @@ function SettingsLayoutRow(): React.JSX.Element {
   )
 }
 
+const START_SCREEN_CHOICES: Array<{ value: StartScreen; label: string }> = [
+  { value: 'last', label: 'Where I left off' },
+  { value: 'home', label: 'Home' }
+]
+
+/**
+ * Settings → Appearance → Start screen (island beside Layout / Swipe
+ * gestures, phones only — the landing logic is usePhoneLayoutBoot's). A
+ * user asked for Home instead of the last note after quitting the app.
+ */
+function SettingsStartScreenRow(): React.JSX.Element {
+  const [value, setValue] = useState<StartScreen>(() => getStartScreen())
+  const choose = (next: StartScreen): void => {
+    setStartScreen(next)
+    setValue(next)
+  }
+  return (
+    <div className="zn-settings-layout">
+      <div className="zn-settings-layout-text">
+        <div className="zn-settings-layout-title">Start screen</div>
+        <div className="zn-settings-layout-desc">
+          {value === 'home'
+            ? 'Opening the app lands on Home. Switching to another app and back keeps your place.'
+            : 'Opening the app returns to the note or view you left. Choose Home to start fresh every time.'}
+        </div>
+      </div>
+      <div className="zn-settings-layout-seg" role="radiogroup" aria-label="Start screen">
+        {START_SCREEN_CHOICES.map((choice) => (
+          <button
+            key={choice.value}
+            type="button"
+            role="radio"
+            aria-checked={value === choice.value}
+            className={value === choice.value ? 'is-active' : ''}
+            onClick={() => choose(choice.value)}
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function useLayoutSettingsRow(): void {
   useEffect(() => {
     let container: HTMLElement | null = null
@@ -2769,6 +2823,7 @@ function useLayoutSettingsRow(): void {
           <>
             <SettingsLayoutRow />
             <SettingsSystemBarsRow />
+            {isPhoneWidth() && <SettingsStartScreenRow />}
             {isPhoneWidth() && <SettingsGesturesRow />}
           </>
         )
@@ -2855,6 +2910,25 @@ function useAboutGitHubLinks(): void {
   }, [])
 }
 
+/**
+ * Long-press, swipe-left actions and swipe-right pin on app-core's note rows
+ * (Home, Quick Notes, Tags, Archive, Trash) — the drawer rows' gestures
+ * everywhere a note is listed (note-row-gestures.ts).
+ */
+function useNoteRowGestures(): void {
+  useEffect(() => installNoteRowGestures(), [])
+}
+
+/** Caret stays above the keyboard's formatting toolbar (editor-keyboard-scroll.ts). */
+function useEditorKeyboardScroll(): void {
+  useEffect(() => installEditorKeyboardScroll(), [])
+}
+
+/** The keyboard's autocorrect / suggestions in the note body (editor-native-typing.ts). */
+function useEditorNativeTyping(): void {
+  useEffect(() => installEditorNativeTyping(), [])
+}
+
 function MobileShellRoot(): React.JSX.Element {
   usePhoneLayoutBoot()
   useDrawerAutoClose()
@@ -2862,6 +2936,9 @@ function MobileShellRoot(): React.JSX.Element {
   useWikilinkTapNavigation()
   useBreadcrumbDrawerNav()
   useLongPressContextMenu()
+  useNoteRowGestures()
+  useEditorKeyboardScroll()
+  useEditorNativeTyping()
   usePlaceholderCleanup()
   useTagsEmptyStateHint()
   useEdgeSwipeDrawer()
@@ -2888,6 +2965,7 @@ function MobileShellRoot(): React.JSX.Element {
     <>
       <MobileNav />
       <MobileDrawer />
+      <NoteActionSheet />
       {sheet === 'vaults' && <VaultsSheet onClose={closeMobileSheet} />}
       <MobileEditorToolbar />
       <KanbanMoveSheet />

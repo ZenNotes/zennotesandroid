@@ -29,10 +29,16 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(FolderPickerPlugin.class);
         registerPlugin(SafFsPlugin.class);
         registerPlugin(DirectUploadPlugin.class);
+        registerPlugin(WidgetBridgePlugin.class);
         super.onCreate(savedInstanceState);
         // Cold-start share: the launch intent IS the share. Stash it now; the
         // WebView drains the inbox after the vault opens (importPendingShares).
         ShareInboxPlugin.stashFromIntent(this, getIntent());
+        // Widget taps are zennotes:// view intents; the WebView consumes the
+        // newest at boot (WidgetBridgePlugin.consumeLaunchLink). On a recreate
+        // into an existing task this one is the task's original intent and
+        // the real tap follows in onNewIntent, which stashes over it.
+        WidgetBridgePlugin.stashLaunchLink(getIntent());
         neutralizeDoubleKeyboardInset();
         installCrashProofWebViewClient();
         // Fullscreen writing (#22, #42): while the JS shell hides the
@@ -137,5 +143,6 @@ public class MainActivity extends BridgeActivity {
         // Warm share (singleTask): stash before onResume so the foreground
         // appStateChange listener drains it in the same wake.
         ShareInboxPlugin.stashFromIntent(this, intent);
+        WidgetBridgePlugin.stashLaunchLink(intent);
     }
 }

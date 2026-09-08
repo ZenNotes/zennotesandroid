@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget surface: a white rounded rectangle the providers tint with the
+     app theme's background via setColorFilter (colors travel in the
+     snapshot, not in resources). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFFFF" />
+    <corners android:radius="@dimen/zn_widget_radius" />
+</shape>

@@ -35,6 +35,51 @@
             </intent-filter>
         </activity>
 
+        <!-- Home Screen widgets (md.zennotes.widgets): rendered from the
+             snapshot WidgetBridgePlugin writes; taps are zennotes:// view
+             intents into MainActivity. -->
+        <receiver
+            android:name=".widgets.NewNoteWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_new_note_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_new_note_info" />
+        </receiver>
+        <receiver
+            android:name=".widgets.RecentNotesWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_recent_notes_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_recent_notes_info" />
+        </receiver>
+        <receiver
+            android:name=".widgets.TasksWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_tasks_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_tasks_info" />
+        </receiver>
+        <service
+            android:name=".widgets.RecentNotesWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widgets.TasksWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

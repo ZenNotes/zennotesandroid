@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- New Note (2x2). XML colors are the dark-hard defaults for the picker
+     preview; NewNoteWidgetProvider applies the app's live theme. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="UseAppTint"
+    android:id="@+id/zn_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/zn_widget_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/zn_widget_bg"
+        android:tint="@color/znWidgetBg"
+        android:importantForAccessibility="no" />
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="14dp">
+
+        <ImageView
+            android:id="@+id/zn_new_enso"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentTop="true"
+            android:src="@drawable/zn_enso"
+            android:importantForAccessibility="no" />
+
+        <FrameLayout
+            android:id="@+id/zn_new_plus_frame"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentTop="true">
+
+            <ImageView
+                android:id="@+id/zn_new_plus_bg"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/zn_circle"
+                android:tint="@color/znWidgetAccent"
+                android:importantForAccessibility="no" />
+
+            <ImageView
+                android:id="@+id/zn_new_plus"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_zn_plus"
+                android:tint="@color/znWidgetBg"
+                android:contentDescription="@string/widget_new_note_title" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/zn_new_vault"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/widget_app_name"
+            android:textColor="@color/znWidgetMuted"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/zn_new_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_above="@id/zn_new_vault"
+            android:layout_marginBottom="2dp"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:text="@string/widget_new_note_title"
+            android:textColor="@color/znWidgetFg"
+            android:textSize="17sp" />
+    </RelativeLayout>
+</FrameLayout>

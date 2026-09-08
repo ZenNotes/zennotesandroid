@@ -140,6 +140,14 @@ export function toggleFolderPin(
   toggle(vaultKey, 'folders', subpath, livePaths)
 }
 
+/** Plain subscription for code outside React (the widget publisher). */
+export function subscribePins(cb: () => void): () => void {
+  subscribers.add(cb)
+  return () => {
+    subscribers.delete(cb)
+  }
+}
+
 /** Reactive pins for a vault; stable snapshot while nothing changes. */
 export function usePins(vaultKey: string | null): VaultPins {
   return useSyncExternalStore(

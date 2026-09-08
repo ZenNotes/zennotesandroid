@@ -27,15 +27,21 @@ src/
     native-fs.ts          Capacitor Filesystem wrapper (vault root = app-scoped
                           external storage via Directory.External)
     events.ts             VaultChangeEvent emitter (in-app writes + rescan)
+    widget-snapshot.ts    the Home Screen widget snapshot: the contract + pure selectors
+    widgets.ts            publishes it through the ZenWidgets plugin on every change
   ui-mobile/
     MobileShell.tsx       bottom nav (capture ⊕ / search / sidebar / palette),
                           phone drawer behavior via the shared Zustand store
     mobile.css            safe areas, overlay drawers, keyboard handling
+    widget-links.ts       the zennotes:// links the widgets fire; deep-links.ts runs them
 android/                  Capacitor-generated Gradle project (appId md.zennotes)
   app/src/main/java/md/zennotes/
     MainActivity.java     registers native plugins, stashes ACTION_SEND shares
     DirectUploadPlugin.java streams signed object PUTs on Android 7+
     ShareInboxPlugin.java Android ShareInbox (same jsName/contract as iOS)
+    WidgetBridgePlugin.java ZenWidgets (same jsName/contract as iOS): writes the snapshot
+    widgets/              New Note, Recent Notes, Today's Tasks: AppWidgetProviders +
+                          RemoteViewsServices rendering that snapshot
 ```
 
 Key decisions (all forced by "don't modify the zennotes repo"):
@@ -53,6 +59,23 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   storage. **Do not switch to `Directory.Documents`** — on Android that is the
   public Documents collection, which the Filesystem plugin permission-gates
   and Android 11+ scoped storage effectively breaks.
+- **Home Screen widgets** — the iPhone's three (New Note, Recent Notes,
+  Today's Tasks) on the same `src/bridge/widgets.ts` publisher and the same
+  snapshot contract, rendered here as classic RemoteViews in Java
+  (`md.zennotes.widgets`): no Glance, no Kotlin, the build stays Java-only.
+  The snapshot lives in the app's private files
+  (`files/widgets/snapshot.json`; iOS uses the App Group), the two list
+  widgets are `RemoteViewsService`-backed and scroll, colors come from the
+  app's live theme in the snapshot, and every tap is an ACTION_VIEW
+  `zennotes://` intent into the single-task MainActivity. Warm, it arrives
+  as `onNewIntent` → `appUrlOpen`; at boot the shell asks the plugin for
+  the newest link it saw (`ZenWidgets.consumeLaunchLink`, stashed from
+  `onCreate` and `onNewIntent`) because Capacitor's `getLaunchUrl` captures
+  the activity's intent once and an activity recreated into its old task
+  reports the task's *original* intent there — the tap that woke it only
+  shows up as a retained `appUrlOpen` the Cloud auth listener consumes.
+  Pins are keyed by `vault.root` here, where the iPhone shell has
+  `activeVaultStateKey`.
 - **Durable app preferences.** WebView localStorage is evictable on some
   devices, which silently reset theme and editor settings. `src/bootstrap.ts`
   mirrors `zen:prefs:v2` into native Capacitor Preferences on every write,

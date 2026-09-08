@@ -1,0 +1,1 @@
+App core 2.46: comment threads with names, a calendar in the @ menu, saved Tasks filters, and a Kanban board with one column per folder.

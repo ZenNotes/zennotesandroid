@@ -69,14 +69,14 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.0.0",
+    "@capacitor/cli": "^8.5.1",
     "@types/node": "^22.10.5",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^6.1.1",
-    "autoprefixer": "^10.4.20",
+    "autoprefixer": "^10.5.5",
     "harper.js": "^2.7.0",
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.28",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
     "vite": "^8.2.2"

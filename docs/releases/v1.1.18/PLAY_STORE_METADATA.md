@@ -39,5 +39,17 @@ task lines, theme colors); no note bodies and nothing off the device.
   within seconds; `npm test` 50/50; `npm run typecheck` clean at the pin;
   `testDebugUnitTest`, `lintDebug` and `assembleDebug` pass. Not verified
   on a device or below API 31.
-- Matching ports: iOS ZenNotes/zennotesios `release/1.9.9` (build 20);
+- Comment sidecar fix (2026-09-09, after the merge): between the 1.1.16
+  pin and a3e638fc, desktop `vault.ts` dropped its private comment
+  normalizer for the shared `@shared/note-comments`, which keeps the 2.46
+  `author` and `parentId` fields. `MobileVault.writeNoteComments` still
+  rebuilt each record from a fixed field list, and app-core hands over the
+  whole list on every comment action, so one reply, resolve, or delete on
+  the phone would have flattened every thread and dropped every name the
+  desktop or an assistant wrote. `src/bridge/vault-fs.ts` now reads and
+  writes the sidecar through the shared normalizer, as desktop does.
+  Verified by `npm run typecheck`, `npm run build`, and `npm test`;
+  `MobileVault` cannot run under `node --test` (path aliases), and the
+  fix was not re-run on the AVD. Same fix as iPhone 1.9.8.
+- Matching ports: iOS ZenNotes/zennotesios `release/1.9.8` (build 19);
   desktop ZenNotes/zennotes 2.46.0.

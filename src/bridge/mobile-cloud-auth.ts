@@ -98,9 +98,25 @@ export async function configureMobileCloudAuth(appVersion: string): Promise<void
       : undefined
   })
 
-  await CapApp.addListener('appUrlOpen', ({ url }) => scheduleAuthCallback(url))
+  await CapApp.addListener('appUrlOpen', ({ url }) => {
+    if (isCloudAuthUrl(url)) scheduleAuthCallback(url)
+  })
   const launch = await CapApp.getLaunchUrl()
-  if (launch?.url) scheduleAuthCallback(launch.url)
+  if (launch?.url && isCloudAuthUrl(launch.url)) scheduleAuthCallback(launch.url)
+}
+
+/** The scheme is shared with the widget links (ui-mobile/widget-links.ts);
+ *  only `zennotes://auth…` is this module's to handle. */
+function isCloudAuthUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl.trim())
+    return (
+      parsed.protocol === 'zennotes:' &&
+      (parsed.hostname || parsed.pathname.replace(/^\/+/, '')) === 'auth'
+    )
+  } catch {
+    return false
+  }
 }
 
 export async function getMobileCloudAccountStatus(): Promise<CloudAccountStatus> {

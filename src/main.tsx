@@ -19,6 +19,8 @@ import {
 } from './bridge/mobile-bridge'
 import { configureMobileCloudAuth } from './bridge/mobile-cloud-auth'
 import { maybeRunFirstRunOnboarding } from './ui-mobile/Onboarding'
+import { installWidgetPublisher } from './bridge/widgets'
+import { installDeepLinks } from './ui-mobile/deep-links'
 import { mountMobileShell } from './ui-mobile/MobileShell'
 import { installHomeGuard } from './ui-mobile/nav'
 import { refreshVault } from './ui-mobile/refresh'
@@ -94,6 +96,10 @@ async function boot(): Promise<void> {
   if (!root) throw new Error('Renderer root element #root was not found')
   renderZenNotesApp(root)
   mountMobileShell()
+  // Home Screen widgets: publish what they show, and run the links they
+  // open the app with (both wait for the workspace themselves).
+  installWidgetPublisher()
+  installDeepLinks()
 }
 
 void boot().catch((err) => {

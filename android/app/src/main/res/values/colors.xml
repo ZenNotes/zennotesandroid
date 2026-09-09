@@ -3,4 +3,12 @@
     <!-- ZenNotes dark-hard background (matches SplashScreen backgroundColor
          and the pre-boot theme seeded in index.html). -->
     <color name="znBackground">#1d2021</color>
+    <!-- Widget defaults (dark-hard) for XML previews; the providers apply the
+         app's live theme from the snapshot at update time. -->
+    <color name="znWidgetBg">#1d2021</color>
+    <color name="znWidgetBg2">#3c3836</color>
+    <color name="znWidgetFg">#d4be98</color>
+    <color name="znWidgetMuted">#a89984</color>
+    <color name="znWidgetAccent">#e78a4e</color>
+    <color name="znWidgetRed">#ea6962</color>
 </resources>

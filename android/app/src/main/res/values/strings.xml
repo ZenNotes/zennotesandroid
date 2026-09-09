@@ -5,4 +5,39 @@
     <string name="package_name">md.zennotes</string>
     <string name="custom_url_scheme">md.zennotes</string>
     <string name="zennotes_url_scheme">zennotes</string>
+
+    <!-- Home Screen widgets (md.zennotes.widgets). -->
+    <string name="widget_app_name">ZenNotes</string>
+    <string name="widget_new_note_label">New Note</string>
+    <string name="widget_new_note_description">Start a new note with one tap.</string>
+    <string name="widget_new_note_title">New note</string>
+    <string name="widget_recent_notes_label">Recent Notes</string>
+    <string name="widget_recent_notes_description">Your pinned notes, then the ones you edited last.</string>
+    <string name="widget_tasks_label">Today\'s Tasks</string>
+    <string name="widget_tasks_description">What\'s due today, overdue, or waiting for a date.</string>
+    <string name="widget_today">Today</string>
+    <string name="widget_overdue_count">%1$d overdue</string>
+    <string name="widget_open_count">%1$d open</string>
+    <string name="widget_empty_no_notes">No notes yet</string>
+    <string name="widget_empty_no_notes_detail">Tap + to write your first.</string>
+    <string name="widget_empty_open_app">Open ZenNotes once</string>
+    <string name="widget_empty_open_app_detail">The widget fills in from your vault.</string>
+    <string name="widget_empty_tasks_detail">Your tasks show up after the first scan.</string>
+    <string name="widget_all_clear">All clear</string>
+    <string name="widget_all_clear_detail">Nothing due today.</string>
+    <!-- Static picker previews (API 31+). -->
+    <string name="widget_preview_vault">My Vault</string>
+    <string name="widget_preview_note_1">Reading list</string>
+    <string name="widget_preview_note_2">Product ideas</string>
+    <string name="widget_preview_note_3">Meeting notes</string>
+    <string name="widget_preview_stamp_1">25m ago</string>
+    <string name="widget_preview_stamp_2">3h ago</string>
+    <string name="widget_preview_stamp_3">6h ago</string>
+    <string name="widget_preview_count">1 overdue</string>
+    <string name="widget_preview_task_1">Book the October flights</string>
+    <string name="widget_preview_task_1_detail">Sep 7 · Trip planning</string>
+    <string name="widget_preview_task_2">Draft the release notes</string>
+    <string name="widget_preview_task_2_detail">Product ideas</string>
+    <string name="widget_preview_task_3">Reply to the design review</string>
+    <string name="widget_preview_task_3_detail">Today</string>
 </resources>

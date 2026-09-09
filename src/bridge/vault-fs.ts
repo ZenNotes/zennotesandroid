@@ -25,6 +25,7 @@ import type { CustomTemplateFile, WriteTemplateInput } from '@bridge-contract/te
 import type { VaultTask } from '@shared/tasks'
 import { parseTaskFile, parseTasksFromBody } from '@shared/tasks'
 import { normalizeHarperVaultState } from '@shared/harper-settings'
+import { normalizeNoteComments } from '@shared/note-comments'
 import { isFormDirName, isDatabaseInternalPath } from '@shared/databases'
 import { emptyExcalidrawDocument } from '@shared/excalidraw'
 import { DEMO_TOUR_ASSETS, DEMO_TOUR_NOTES } from '@desktop-main/demo-tour-data'
@@ -937,14 +938,11 @@ export class MobileVault {
   }
 
   async readNoteComments(relPath: string): Promise<NoteComment[]> {
-    const raw = await this.fs.readTextOrNull(this.commentsPathFor(resolveSafeRel(relPath)))
+    const rel = resolveSafeRel(relPath)
+    const raw = await this.fs.readTextOrNull(this.commentsPathFor(rel))
     if (!raw) return []
     try {
-      const parsed = JSON.parse(raw) as { comments?: NoteComment[] } | NoteComment[]
-      const list = Array.isArray(parsed) ? parsed : (parsed.comments ?? [])
-      return list
-        .filter((c) => c && typeof c === 'object')
-        .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+      return normalizeNoteComments(JSON.parse(raw), rel)
     } catch {
       return []
     }
@@ -961,18 +959,11 @@ export class MobileVault {
 
   async writeNoteComments(relPath: string, inputs: NoteCommentInput[]): Promise<NoteComment[]> {
     const rel = resolveSafeRel(relPath)
-    const now = Date.now()
-    const comments: NoteComment[] = inputs.map((input) => ({
-      id: input.id ?? uuid(),
-      notePath: rel,
-      anchorStart: Math.max(0, Math.min(input.anchorStart, input.anchorEnd)),
-      anchorEnd: Math.max(0, Math.max(input.anchorStart, input.anchorEnd)),
-      anchorText: (input.anchorText ?? '').slice(0, 500),
-      body: input.body ?? '',
-      createdAt: input.createdAt ?? now,
-      updatedAt: input.updatedAt ?? now,
-      resolvedAt: input.resolvedAt ?? null
-    }))
+    // Desktop's own normalizer (shared since app core 2.46). App-core always
+    // hands over the whole list, so the writer must keep the optional `author`
+    // and `parentId` a desktop or an assistant wrote, or one comment action on
+    // the phone flattens every thread and drops every name in the sidecar.
+    const comments = normalizeNoteComments(inputs, rel)
     await this.writeCommentsFile(rel, comments)
     emitVaultChange({
       kind: 'change',

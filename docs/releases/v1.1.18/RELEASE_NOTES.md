@@ -1,6 +1,6 @@
 # ZenNotes for Android 1.1.18: widgets
 
-Home Screen widgets, in step with iPhone 1.9.9. Three of them, zero
+Home Screen widgets, in step with iPhone 1.9.8. Three of them, zero
 configuration, wearing whatever theme the app wears.
 
 ## What changes on the phone
@@ -44,4 +44,4 @@ configuration, wearing whatever theme the app wears.
 No new permissions, services, or data collection. On-device and folder
 vaults continue to work without an account; self-hosted and ZenNotes
 Cloud vaults remain optional. The same widgets ship on iPhone and iPad as
-ZenNotes 1.9.9.
+ZenNotes 1.9.8.

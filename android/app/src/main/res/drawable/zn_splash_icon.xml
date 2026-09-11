@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A non-adaptive, square logo in the 288dp splash canvas. The complete
+     rounded square fits inside Android's 192dp circular safe area, so the
+     system mask cannot clip its corners or distort the ring. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <size android:width="288dp" android:height="288dp" />
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+    <item android:width="128dp" android:height="128dp" android:gravity="center">
+        <bitmap android:src="@mipmap/ic_launcher_foreground" android:gravity="fill" />
+    </item>
+</layer-list>

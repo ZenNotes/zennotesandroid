@@ -26,7 +26,6 @@ import {
   type CloudSyncHostVault
 } from '@zennotes/shared-domain/cloud-sync-host-service'
 import {
-  PortableCloudSyncRepository,
   type PortableCloudSyncFileSystem
 } from '@zennotes/shared-domain/cloud-sync-portable-filesystem'
 import type { CloudSyncState } from '@zennotes/shared-domain/cloud-sync-engine'
@@ -37,10 +36,12 @@ import {
   authenticatedClient,
   getMobileCloudAccountStatus
 } from './mobile-cloud-auth'
-import { emitVaultChange } from './events'
+import { CachedCloudSyncRepository, type ScanCache } from './cloud-sync-repository'
+import { trackCloudSyncChanges } from './cloud-sync-refresh'
 import { isNotFoundError } from './fs-errors'
 
 const STORAGE_ROOT = 'zennotes-cloud-sync'
+const refreshStates = new WeakMap<MobileVault, { changed: boolean }>()
 
 const persistence: CloudSyncHostPersistence = {
   async loadLink(vaultKey: string): Promise<unknown> {
@@ -103,13 +104,7 @@ export async function deleteMobileCloudVault(vault: MobileVault): Promise<void> 
 }
 
 export async function syncMobileCloudVault(vault: MobileVault): Promise<CloudSyncRunSummary> {
-  const summary = await service.sync(hostVault(vault))
-
-  if (summary.pulled > 0) {
-    emitVaultChange({ kind: 'change', path: '', folder: 'inbox', scope: 'resync' })
-  }
-
-  return summary
+  return service.sync(hostVault(vault, true))
 }
 
 export async function getMobileCloudConflict(
@@ -276,7 +271,7 @@ export async function restoreMobileCloudBackupNote(
   return service.restoreBackupNote(hostVault(vault), backupId, snapshotItemId)
 }
 
-function hostVault(vault: MobileVault): CloudSyncHostVault {
+function hostVault(vault: MobileVault, cacheScan = false): CloudSyncHostVault {
   const fs: PortableCloudSyncFileSystem = {
     // Sync must distinguish an unreadable provider from an empty vault.
     readdir: async (directory) =>
@@ -297,11 +292,33 @@ function hostVault(vault: MobileVault): CloudSyncHostVault {
     }
   }
 
+  const vaultKey = vault.rootLabel
+  const state = refreshStates.get(vault) ?? { changed: false }
+  refreshStates.set(vault, state)
+  const changes = trackCloudSyncChanges(fs, () => vault.rescan(), state)
   return {
-    key: vault.rootLabel,
-    repository: new PortableCloudSyncRepository(fs),
-    refresh: () => vault.rescan()
+    key: vaultKey,
+    repository: new CachedCloudSyncRepository(changes.fs, vault.fs, {
+      loadTracked: async () => {
+        // Review/restore actions always receive real bytes, not scan placeholders.
+        if (!cacheScan) return null
+        const link = await readJson(await linkPath(vaultKey))
+        if (!isRecord(link) || typeof link.base_url !== 'string' || typeof link.vault_id !== 'string') return null
+        return await readJson(await statePath(vaultKey, link.base_url, link.vault_id)) as CloudSyncState | null
+      },
+      loadCache: async () => readJson(await scanCachePath(vaultKey)),
+      saveCache: async (cache: ScanCache) => writeJson(await scanCachePath(vaultKey), cache)
+    }, changes.markChanged),
+    refresh: changes.refresh
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object'
+}
+
+async function scanCachePath(vaultKey: string): Promise<string> {
+  return `${STORAGE_ROOT}/scan-cache/${await fingerprint(vaultKey)}.json`
 }
 
 async function linkPath(vaultKey: string): Promise<string> {

@@ -46,6 +46,7 @@ import { installNoteRowGestures, NOTE_ROW_SELECTOR } from './note-row-gestures'
 import { NoteActionSheet } from './note-actions'
 import { installEditorKeyboardScroll } from './editor-keyboard-scroll'
 import { installEditorNativeTyping } from './editor-native-typing'
+import { installImagePaste } from './image-paste'
 import { getStartScreen, setStartScreen, type StartScreen } from './start-screen'
 import { useYouTubeLiteEmbeds } from './youtube-embed-shim'
 import { VaultsSheet, promptNewVault } from './MobileDrawer'
@@ -2930,6 +2931,7 @@ function useEditorNativeTyping(): void {
 }
 
 function MobileShellRoot(): React.JSX.Element {
+  useEffect(() => installImagePaste(), [])
   usePhoneLayoutBoot()
   useDrawerAutoClose()
   useSettingsMobilizer()

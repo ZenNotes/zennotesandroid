@@ -30,6 +30,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SafFsPlugin.class);
         registerPlugin(DirectUploadPlugin.class);
         registerPlugin(WidgetBridgePlugin.class);
+        registerPlugin(ImagePastePlugin.class);
         super.onCreate(savedInstanceState);
         // Cold-start share: the launch intent IS the share. Stash it now; the
         // WebView drains the inbox after the vault opens (importPendingShares).

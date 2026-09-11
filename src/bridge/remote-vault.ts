@@ -33,6 +33,7 @@ import type { VaultTask } from '@shared/tasks'
 import type { CustomTemplateFile, WriteTemplateInput } from '@bridge-contract/templates'
 import type { ImportedAsset } from '@shared/ipc'
 import { createAbsenceAwareReader } from '@shared/remote-absence'
+import { pastedImageFilename } from '@shared/pasted-image'
 import { emitVaultChange } from './events'
 import { importedAssetFilename } from './imported-assets'
 import { RemoteClient, RemoteRequestError } from './remote-client'
@@ -339,9 +340,8 @@ export class RemoteVault {
   async importPastedImage(input: PastedImageInput): Promise<ImportedAsset> {
     const bytes =
       input.data instanceof Uint8Array ? input.data : new Uint8Array(input.data as ArrayBuffer)
-    const ext = input.mimeType === 'image/png' ? '.png' : input.mimeType === 'image/gif' ? '.gif' : '.jpg'
-    const base = (input.suggestedName ?? 'Pasted image').replace(/\.[a-z0-9]+$/i, '')
-    const meta = await this.client.uploadAsset(`${base}${ext}`, bytesToBase64(bytes), 'assets')
+    const name = pastedImageFilename(input, new Date())
+    const meta = await this.client.uploadAsset(name, bytesToBase64(bytes), 'assets')
     emitVaultChange({ kind: 'add', path: meta.path, folder: 'inbox', scope: 'content' })
     return { name: meta.name, path: meta.path, markdown: `![[${meta.path}]]`, kind: 'image' }
   }

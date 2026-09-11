@@ -24,6 +24,7 @@ import { confirmApp } from '@zennotes/app-core/lib/confirm-requests'
 import { promptApp } from '@zennotes/app-core/lib/prompt-requests'
 import { buildMoveNotePrompt, parseMoveNoteTarget } from '@zennotes/app-core/lib/move-note'
 import { getPinnedNotes, toggleNotePin, usePins } from './pins'
+import { SheetHandle } from './SheetHandle'
 
 export type NoteRowKind = 'note' | 'archived' | 'trashed'
 
@@ -242,6 +243,7 @@ export function NoteActionSheet(): React.JSX.Element | null {
           under the sheet, and the list views' keyboard shortcuts must not
           fire through it — exactly what the marker gates for its own menus. */}
       <div className="zn-mobile-sheet" role="menu" aria-label="Note actions" data-ctx-menu="">
+        <SheetHandle onDismiss={closeNoteMenu} />
         <div className="zn-mobile-sheet-title zn-truncate">{target.title}</div>
         <div className="zn-mobile-sheet-scroll">
           <div className="zn-mobile-sheet-group">

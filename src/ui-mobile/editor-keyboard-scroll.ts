@@ -30,20 +30,23 @@ import { Keyboard } from '@capacitor/keyboard'
 import { EditorView } from '@codemirror/view'
 import { StateEffect } from '@codemirror/state'
 import { useStore } from '@zennotes/app-core/store'
+import { installSelectionToolbarSpace, selectionToolbarInset } from './selection-toolbar-space'
 
 const TOOLBAR = '.zn-editor-toolbar'
 
 /** Bottom clearance CodeMirror must keep clear: the toolbar's height while it
  *  is mounted (it renders only while the keyboard is up over the editor). */
-function toolbarClearance(): number {
+function toolbarClearance(view: EditorView): number {
   const bar = document.querySelector<HTMLElement>(TOOLBAR)
   if (!bar) return 0
-  // Extra so the caret line isn't flush against the toolbar's top edge.
-  return Math.round(bar.getBoundingClientRect().height) + 8
+  // Only reserve actual overlap. When the selection bubble has already
+  // shrunk the scroller, adding the keyboard bar's full height again would
+  // needlessly consume the small amount of visible text above it.
+  return selectionToolbarInset(view.scrollDOM.getBoundingClientRect(), bar.getBoundingClientRect())
 }
 
-function marginSource(): { bottom: number } | null {
-  const bottom = toolbarClearance()
+function marginSource(view: EditorView): { bottom: number } | null {
+  const bottom = toolbarClearance(view)
   return bottom > 0 ? { bottom } : null
 }
 
@@ -86,6 +89,10 @@ export function revealCaretAboveKeyboardSoon(): void {
 /** Wire the margin source to every editor view and the reveal to the
  *  keyboard lifecycle. Returns the uninstaller. */
 export function installEditorKeyboardScroll(): () => void {
+  const removeSelectionSpace = installSelectionToolbarSpace(
+    () => useStore.getState().editorViewRef?.dom ?? null,
+    revealCaretAboveKeyboard
+  )
   const initial = useStore.getState().editorViewRef
   if (initial) ensureMargins(initial)
   const unsubscribe = useStore.subscribe((state, prev) => {
@@ -103,6 +110,7 @@ export function installEditorKeyboardScroll(): () => void {
   }
   window.addEventListener('resize', onResize)
   return () => {
+    removeSelectionSpace()
     unsubscribe()
     void didShow.then((h) => h.remove()).catch(() => {})
     window.removeEventListener('resize', onResize)

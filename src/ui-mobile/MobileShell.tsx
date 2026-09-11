@@ -46,6 +46,8 @@ import { installNoteRowGestures, NOTE_ROW_SELECTOR } from './note-row-gestures'
 import { NoteActionSheet } from './note-actions'
 import { installEditorKeyboardScroll } from './editor-keyboard-scroll'
 import { installEditorNativeTyping } from './editor-native-typing'
+import { installWikilinkTouchNavigation } from './wikilink-touch'
+import { SheetHandle } from './SheetHandle'
 import { installImagePaste } from './image-paste'
 import { getStartScreen, setStartScreen, type StartScreen } from './start-screen'
 import { useYouTubeLiteEmbeds } from './youtube-embed-shim'
@@ -295,6 +297,7 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
     <>
       <div className="zn-mobile-sheet-backdrop" onClick={onClose} role="presentation" />
       <div className="zn-mobile-sheet" role="menu" aria-label="Note actions">
+        <SheetHandle onDismiss={onClose} />
         <div className="zn-mobile-sheet-title">{dbTitle ?? title}</div>
         {hasNote && (
           <div className="zn-mobile-seg" role="group" aria-label="View mode">
@@ -403,6 +406,7 @@ function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
     <>
       <div className="zn-mobile-sheet-backdrop" onClick={onClose} role="presentation" />
       <div className="zn-mobile-sheet" role="menu" aria-label="Create">
+        <SheetHandle onDismiss={onClose} />
         <div className="zn-mobile-sheet-title">Create</div>
         <div className="zn-mobile-sheet-scroll">
           <div className="zn-mobile-sheet-group">
@@ -732,22 +736,19 @@ function openWikilinkFromTouch(target: string): void {
  * Tap-to-follow wikilinks in the editor. The shared extension follows links
  * on `mousedown`, but on iOS the preceding touch moves the CodeMirror
  * selection, which reveals the raw `[[...]]` source and removes the rendered
- * link before any mouse event fires — so taps just placed the caret (spec 06
- * wants tap = navigate). Intercepting `touchstart` runs before CodeMirror.
+ * link before any mouse event fires. Remember the target at touchstart, but
+ * follow only after a short, stationary tap ends (#50).
  */
 function useWikilinkTapNavigation(): void {
   useEffect(() => {
-    const onTouchStart = (e: TouchEvent): void => {
-      const el = (e.target as HTMLElement | null)?.closest?.('.cm-wikilink')
-      const target = el instanceof HTMLElement ? el.dataset.target : undefined
-      if (!target) return
-      e.preventDefault()
-      e.stopPropagation()
-      openWikilinkFromTouch(target)
-    }
-    document.addEventListener('touchstart', onTouchStart, { capture: true, passive: false })
-    return () =>
-      document.removeEventListener('touchstart', onTouchStart, { capture: true } as never)
+    return installWikilinkTouchNavigation(document, {
+      open: openWikilinkFromTouch,
+      hasSelection: () => {
+        const selection = window.getSelection()
+        const view = useStore.getState().editorViewRef
+        return Boolean((selection && !selection.isCollapsed) || (view && !view.state.selection.main.empty))
+      }
+    })
   }, [])
 }
 
@@ -2291,6 +2292,7 @@ function KanbanMoveSheet(): React.JSX.Element | null {
         role="presentation"
       />
       <div className="zn-mobile-sheet" role="menu" aria-label="Move task to column">
+        <SheetHandle onDismiss={() => setState(null)} />
         <div className="zn-mobile-sheet-title">Move to…</div>
         <div className="zn-mobile-sheet-scroll">
           <div className="zn-mobile-sheet-group">

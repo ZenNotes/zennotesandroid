@@ -1384,7 +1384,7 @@ export class MobileVault {
     }
   }
 
-  /** Foreground rescan: re-stat the tree, emit change events for anything new. */
+  /** Foreground/cloud rescan: refresh cached metadata and notify once. */
   async rescan(): Promise<void> {
     // Vault settings may have changed externally (desktop edit synced via
     // iCloud) — drop the cache so the next read sees the file.
@@ -1392,25 +1392,13 @@ export class MobileVault {
     const before = new Map<string, CachedMeta>(this.metaCache)
     const notes = await this.listNotes()
     const seen = new Set(notes.map((n) => n.path))
-    for (const note of notes) {
-      const prev = before.get(note.path)
-      if (!prev) {
-        emitVaultChange({ kind: 'add', path: note.path, folder: note.folder, scope: 'content' })
-      } else if (prev.meta.updatedAt !== note.updatedAt || prev.size !== note.size) {
-        emitVaultChange({ kind: 'change', path: note.path, folder: note.folder, scope: 'content' })
-      }
-    }
     for (const [path] of before) {
-      if (!seen.has(path)) {
-        this.invalidateMeta(path)
-        emitVaultChange({
-          kind: 'unlink',
-          path,
-          folder: (await this.folderOf(path)) ?? 'inbox',
-          scope: 'content'
-        })
-      }
+      if (!seen.has(path)) this.invalidateMeta(path)
     }
+    // A single resync refreshes assets/settings as well as notes and keeps
+    // remote changes from scheduling another local-change autosync. The
+    // app-core resync handler preserves open notes with unsaved edits.
+    emitVaultChange({ kind: 'change', path: '', folder: 'inbox', scope: 'resync' })
   }
 }
 

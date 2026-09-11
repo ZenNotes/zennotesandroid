@@ -15,6 +15,18 @@
 .zn-mobile body {
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
+  background: rgb(var(--z-bg));
+}
+
+/* Android has no desktop window vibrancy behind the editor. An opaque,
+   theme-colored paint surface avoids exposing the WebView's backing color
+   when native selection handles cause a compositing update (#49). */
+.zn-mobile #root {
+  background: rgb(var(--z-bg));
+}
+
+.zn-mobile .cm-editor {
+  background: rgb(var(--z-bg)) !important;
 }
 
 /* App Store distribution: there is no in-app updater on iOS (any width —
@@ -50,7 +62,7 @@
   /* Balanced against the home-indicator zone: 20px in from the right, just
      above the indicator — hugging the edge with a tall bottom gap reads off. */
   right: calc(1.25rem + env(safe-area-inset-right));
-  bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  bottom: calc(0.75rem + env(safe-area-inset-bottom) + var(--zn-cloud-footer-height, 0px));
   z-index: 41;
   display: none;
   align-items: center;
@@ -97,7 +109,7 @@
 .zn-mobile-fab-menu {
   position: fixed;
   right: calc(1.25rem + env(safe-area-inset-right));
-  bottom: calc(0.75rem + 54px + 0.875rem + env(safe-area-inset-bottom));
+  bottom: calc(0.75rem + 54px + 0.875rem + env(safe-area-inset-bottom) + var(--zn-cloud-footer-height, 0px));
   z-index: 41;
   display: none;
   flex-direction: column;
@@ -142,7 +154,7 @@
 .zn-mobile-fab-hint {
   position: fixed;
   right: calc(1.25rem + env(safe-area-inset-right));
-  bottom: calc(0.75rem + 54px + 0.875rem + env(safe-area-inset-bottom));
+  bottom: calc(0.75rem + 54px + 0.875rem + env(safe-area-inset-bottom) + var(--zn-cloud-footer-height, 0px));
   z-index: 41;
   display: none;
   flex-direction: column;
@@ -237,16 +249,40 @@
   box-shadow: 0 -18px 50px -20px rgb(0 0 0 / 0.6);
   padding: 0.5rem 0.875rem calc(0.75rem + env(safe-area-inset-bottom));
   animation: zn-sheet-up 0.26s cubic-bezier(0.32, 0.72, 0.22, 1);
+  translate: 0 var(--zn-sheet-drag, 0px);
+  transition: translate 180ms ease-out;
 }
 
-.zn-mobile-sheet::before {
-  content: '';
+.zn-mobile-sheet[data-dragging] {
+  transition: none;
+}
+
+.zn-mobile-sheet-handle {
   align-self: center;
+  flex: 0 0 44px;
+  width: 80px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+  cursor: grab;
+}
+
+.zn-mobile-sheet-handle:focus-visible {
+  outline: 2px solid rgb(var(--z-accent));
+  border-radius: 8px;
+}
+
+.zn-mobile-sheet-handle span {
   width: 2.25rem;
   height: 0.3125rem;
   border-radius: 9999px;
   background: rgb(var(--z-grey-dim) / 0.55);
-  margin: 0.25rem 0 0.625rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zn-mobile-sheet { animation: none; transition: none; }
 }
 
 .zn-mobile-sheet-title {
@@ -617,6 +653,21 @@
 /* Word-count status bar → gone (fits the ••• sheet's note info instead). */
 .zn-mobile.zn-phone div.h-8.px-6.text-xs {
   display: none;
+}
+
+/* Cloud status is useful on phones; keep Connect/Retry/Review accessible.
+   The shared footer now uses responsive padding, so the old word-count
+   selector above no longer hides it. Reserve one row below the FAB (#48). */
+.zn-phone:has([data-cloud-sync-status]) {
+  --zn-cloud-footer-height: 44px;
+}
+
+.zn-phone .h-8:has([data-cloud-sync-status]) {
+  height: var(--zn-cloud-footer-height);
+}
+
+.zn-phone [data-cloud-sync-action] {
+  min-height: 44px;
 }
 
 /* Split view has no meaning on a phone. */
@@ -2114,6 +2165,14 @@
   left: 50% !important;
   bottom: 54px;
   max-width: calc(100vw - 16px);
+}
+
+/* The selection bubble must have its own space, including while native
+   selection handles are dragged (#51). This shrinks the flex scroller, not
+   merely its scrollable content. The shell measures the live bubble bounds. */
+.zn-phone .cm-editor {
+  box-sizing: border-box;
+  padding-bottom: var(--zn-selection-clearance, 0px);
 }
 
 /* Non-resizing keyboard mode (tablets — see wireKeyboard): the viewport

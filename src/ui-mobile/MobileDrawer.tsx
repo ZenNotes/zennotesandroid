@@ -28,6 +28,7 @@ import { usePins, toggleNotePin, toggleFolderPin } from './pins'
 import { archiveNote, openNoteMenu, trashNote } from './note-actions'
 import { refreshVault } from './refresh'
 import { SwipeRow } from './SwipeRow'
+import { SheetHandle } from './SheetHandle'
 import { getStoragePref } from '../bridge/icloud'
 import {
   ICLOUD_VAULT_ROOT_PREFIX,
@@ -188,6 +189,7 @@ function NewVaultSheet({
     <>
       <div className="zn-mobile-sheet-backdrop" onClick={cancel} role="presentation" />
       <div className="zn-mobile-sheet" role="dialog" aria-label="New Vault">
+        <SheetHandle onDismiss={cancel} />
         <div className="zn-mobile-sheet-title">New Vault</div>
         <div className="zn-mobile-sheet-scroll">
           <input
@@ -416,6 +418,7 @@ export function VaultsSheet({ onClose }: { onClose: () => void }): React.JSX.Ele
     <>
       <div className="zn-mobile-sheet-backdrop" onClick={onClose} role="presentation" />
       <div className="zn-mobile-sheet" role="dialog" aria-label="Vaults">
+        <SheetHandle onDismiss={onClose} />
         <div className="zn-mobile-sheet-title">Vaults</div>
         <div className="zn-mobile-sheet-scroll">
           {busyLabel !== null && <p className="zn-mobile-sheet-note">{busyLabel}</p>}
@@ -1329,6 +1332,7 @@ function MobileDrawerBody(props: {
               role="presentation"
             />
             <div className="zn-mobile-sheet" role="menu" aria-label="Folder actions">
+              <SheetHandle onDismiss={() => setFolderMenu(null)} />
               <div className="zn-mobile-sheet-title zn-truncate">{folderMenu.name}</div>
               <div className="zn-mobile-sheet-scroll">
                 <div className="zn-mobile-sheet-group">

@@ -1,0 +1,1 @@
+ZenNotes for Android 1.1.19 is out: Cloud sync skips work it already did, images paste straight from your keyboard, sheets swipe away, and wikilinks stop firing while you scroll. App core 2.47 rides along. No new permissions.

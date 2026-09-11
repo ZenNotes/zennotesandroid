@@ -4,11 +4,13 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.WindowManager;
 import android.webkit.WebView;
 
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.core.splashscreen.SplashScreen;
 
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -24,12 +26,18 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Install while the launch theme is still active, before Capacitor
+        // replaces it. One compat path for both pre-12 and modern Android.
+        long splashUntil = SystemClock.uptimeMillis() + 400;
+        SplashScreen splash = SplashScreen.installSplashScreen(this);
+        splash.setKeepOnScreenCondition(() -> SystemClock.uptimeMillis() < splashUntil);
         // App-local plugins must be registered before the bridge loads.
         registerPlugin(ShareInboxPlugin.class);
         registerPlugin(FolderPickerPlugin.class);
         registerPlugin(SafFsPlugin.class);
         registerPlugin(DirectUploadPlugin.class);
         registerPlugin(WidgetBridgePlugin.class);
+        registerPlugin(ImagePastePlugin.class);
         super.onCreate(savedInstanceState);
         // Cold-start share: the launch intent IS the share. Stash it now; the
         // WebView drains the inbox after the vault opens (importPendingShares).

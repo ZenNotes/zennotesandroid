@@ -20,7 +20,8 @@ const config: CapacitorConfig = {
     },
     SplashScreen: {
       launchAutoHide: true,
-      launchShowDuration: 400,
+      // MainActivity owns the compat launch splash, before the theme changes.
+      launchShowDuration: 0,
       backgroundColor: '#1d2021'
     }
   }

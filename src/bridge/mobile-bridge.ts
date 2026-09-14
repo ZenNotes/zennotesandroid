@@ -104,6 +104,7 @@ import {
   restoreMobileCloudBackup,
   restoreMobileCloudBackupNote,
   syncMobileCloudVault,
+  hasMobileCloudVaultChanges,
   updateMobileCloudBackupSchedule,
   unlinkMobileCloudVault,
   deleteMobileCloudVault,
@@ -845,6 +846,10 @@ export const mobileBridge: ZenBridge = {
   unlinkCloudVault: () => unlinkMobileCloudVault(activeMobileVault()),
   deleteCloudVault: () => deleteMobileCloudVault(activeMobileVault()),
   syncCloudVault: () => syncMobileCloudVault(activeMobileVault()),
+  hasCloudVaultChanges: () => {
+    const vault = activeVault()
+    return vault instanceof MobileVault ? hasMobileCloudVaultChanges(vault) : Promise.resolve(false)
+  },
   getCloudBootstrapConflict: (conflict) =>
     getMobileCloudBootstrapConflict(activeMobileVault(), conflict),
   resolveCloudBootstrapConflict: (resolution) =>

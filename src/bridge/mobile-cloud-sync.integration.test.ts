@@ -27,6 +27,8 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
   const reads: string[] = []
   const refreshes: Record<string, string>[] = []
   const uploaded: CloudSyncMutation[] = []
+  const manifestRequests: unknown[] = []
+  let accountStatus = { state: 'connected', account: { base_url: 'https://sync.example.test' } }
   let cursor = 0
   let clock = 1000
   let failWritePath: string | null = null
@@ -54,7 +56,10 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
   }
   const remote = {
     listVaults: async () => ({ data: [{ id: 'vault-1', name: 'Test vault' }] }),
-    manifest: async () => ({ data: [...remoteItems.values()], cursor, next_page: null }),
+    manifest: async (_vaultId: string, options?: unknown) => {
+      manifestRequests.push(options)
+      return { data: [...remoteItems.values()], cursor, next_page: null }
+    },
     changes: async (_vaultId: string, after: number) => {
       beforeChanges?.()
       return { data: feed.filter((change) => change.sequence > after), cursor, has_more: false }
@@ -164,15 +169,14 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
     './mobile-cloud-auth': {
       authenticatedCredential: async () => ({ base_url: 'https://sync.example.test', token: 'test-only' }),
       authenticatedClient: async () => remote,
-      getMobileCloudAccountStatus: async () => ({
-        state: 'connected', account: { base_url: 'https://sync.example.test' }
-      })
+      getMobileCloudAccountStatus: async () => accountStatus
     }
   })
   await api.linkMobileCloudVault(vault, 'vault-1')
   const stateKey = () => [...persisted.keys()].find((path) => path.includes('/states/'))
   return {
-    api, vault, files, reads, uploaded, refreshes, remoteText, put,
+    api, vault, files, reads, uploaded, refreshes, remoteText, put, manifestRequests,
+    setAccountStatus: (value: typeof accountStatus) => { accountStatus = value },
     sync: () => api.syncMobileCloudVault(vault),
     setFailWrite: (path: string | null) => { failWritePath = path },
     setBeforeChanges: (callback: typeof beforeChanges) => { beforeChanges = callback },
@@ -191,6 +195,39 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
 }
 
 describe('mobile Cloud adapter wiring', () => {
+  it('detects remote changes from a one-item metadata manifest without scanning local files', async () => {
+    const h = await fixture()
+    assert.equal(await h.api.hasMobileCloudVaultChanges(h.vault), true)
+    assert.deepEqual(h.manifestRequests, [])
+    await h.sync()
+    h.manifestRequests.length = 0
+    h.reads.length = 0
+    h.refreshes.length = 0
+    assert.equal(await h.api.hasMobileCloudVaultChanges(h.vault), false)
+    h.remoteText('note.md', 'Incoming edit')
+    assert.equal(await h.api.hasMobileCloudVaultChanges(h.vault), true)
+    assert.deepEqual(h.manifestRequests, [
+      { includeContent: false, perPage: 1 }, { includeContent: false, perPage: 1 }
+    ])
+    assert.deepEqual(h.reads, [])
+    assert.deepEqual(h.refreshes, [])
+    await h.sync()
+    assert.equal(await h.api.hasMobileCloudVaultChanges(h.vault), false)
+  })
+
+  it('does not probe an unlinked, disconnected, or different-origin account', async () => {
+    const h = await fixture()
+    await h.sync()
+    h.manifestRequests.length = 0
+    h.setAccountStatus({ state: 'disconnected', account: { base_url: 'https://sync.example.test' } })
+    assert.equal(await h.api.hasMobileCloudVaultChanges(h.vault), false)
+    h.setAccountStatus({ state: 'connected', account: { base_url: 'https://another.example.test' } })
+    assert.equal(await h.api.hasMobileCloudVaultChanges(h.vault), false)
+    await h.api.unlinkMobileCloudVault(h.vault)
+    assert.equal(await h.api.hasMobileCloudVaultChanges(h.vault), false)
+    assert.deepEqual(h.manifestRequests, [])
+  })
+
   it('does not rescan the vault or reread acknowledged bytes during a no-op sync', async () => {
     const h = await fixture()
     await h.sync()

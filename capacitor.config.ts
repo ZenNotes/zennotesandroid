@@ -6,7 +6,10 @@ const config: CapacitorConfig = {
   appName: 'ZenNotes',
   webDir: 'dist',
   android: {
-    backgroundColor: '#1d2021'
+    backgroundColor: '#1d2021',
+    // Native debug logging duplicates complete plugin payloads, including
+    // attachment base64 and credentials, and can exhaust Android's heap.
+    loggingBehavior: 'none'
   },
   plugins: {
     Keyboard: {

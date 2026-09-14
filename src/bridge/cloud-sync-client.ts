@@ -102,6 +102,19 @@ class MobileCloudSyncApiClient extends CloudSyncApiClient {
     super(http)
   }
 
+  // Capacitor copies JSON through Java and the WebView. A page containing
+  // several near-limit attachments can exhaust Android's native heap.
+  override manifest(
+    vaultId: string,
+    options: { includeContent?: boolean; page?: number; perPage?: number } = {}
+  ) {
+    return super.manifest(vaultId, options.includeContent ? { ...options, perPage: 1 } : options)
+  }
+
+  override changes(vaultId: string, after: number, _limit = 100) {
+    return super.changes(vaultId, after, 1)
+  }
+
   override async mutate(
     vaultId: string,
     body: CloudSyncMutationRequest

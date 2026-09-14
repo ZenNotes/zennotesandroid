@@ -103,6 +103,21 @@ export async function deleteMobileCloudVault(vault: MobileVault): Promise<void> 
   await service.deleteLinkedVault(hostVault(vault))
 }
 
+/** Check the server cursor without scanning the vault or downloading attachment bytes. */
+export async function hasMobileCloudVaultChanges(vault: MobileVault): Promise<boolean> {
+  const link = await getMobileCloudVaultLink(vault)
+  if (!link) return false
+  const status = await getMobileCloudAccountStatus()
+  if (status.state !== 'connected' || status.account?.base_url !== link.base_url) return false
+  const value = await persistence.loadState(vault.fs.rootPath, link.base_url, link.vault_id)
+  const state = value as Partial<CloudSyncState> | null
+  if (!state || state.version !== 1 || state.vault_id !== link.vault_id ||
+      typeof state.cursor !== 'number' || !Number.isInteger(state.cursor) || state.cursor < 0) return true
+  const client = await authenticatedClient()
+  const manifest = await client.manifest(link.vault_id, { includeContent: false, perPage: 1 })
+  return manifest.cursor !== state.cursor
+}
+
 export async function syncMobileCloudVault(vault: MobileVault): Promise<CloudSyncRunSummary> {
   return service.sync(hostVault(vault, true))
 }

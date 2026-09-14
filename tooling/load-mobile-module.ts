@@ -23,6 +23,7 @@ export async function loadMobileModule(
     platform: 'node',
     format: 'cjs',
     write: false,
+    define: { 'import.meta.env': '{}' },
     plugins: [{
       name: 'mobile-test-boundaries',
       setup(plugin: any) {

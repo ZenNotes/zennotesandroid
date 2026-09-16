@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.1.20",
   "type": "module",
-  "description": "ZenNotes for Android \u2014 Capacitor shell over the ZenNotes app core",
+  "description": "ZenNotes for Android — Capacitor shell over the ZenNotes app core",
   "homepage": "https://zennotes.org",
   "scripts": {
     "dev": "vite",
@@ -88,6 +88,13 @@
   "overrides": {
     "xcode": {
       "uuid": "11.1.1"
+    },
+    "@excalidraw/excalidraw": {
+      "nanoid": "3.3.18"
+    },
+    "@excalidraw/mermaid-to-excalidraw": {
+      "@mermaid-js/parser": "1.2.1",
+      "nanoid": "5.1.16"
     }
   }
 }

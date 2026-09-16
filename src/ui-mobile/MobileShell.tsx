@@ -6,39 +6,24 @@
  * full-screen flow. Rendered into its own React root so app-core stays
  * untouched; state is driven through the shared Zustand store.
  */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { App as CapApp } from '@capacitor/app'
 import { Haptics, ImpactStyle } from '@capacitor/haptics'
 import { Keyboard } from '@capacitor/keyboard'
-import { closeSearchPanel } from '@codemirror/search'
-import { useStore } from '@zennotes/app-core/store'
-import type { TaskMutation } from '@zennotes/app-core/store'
-import type { VaultTask } from '@shared/tasks'
-import { toIsoDateLocal } from '@shared/tasks'
-import { buildCommands } from '@zennotes/app-core/lib/commands'
-import { findLeaf, updateLeaf } from '@zennotes/app-core/lib/pane-layout'
-import {
-  paneModeForPath,
-  paneModesWithPathMode,
-  requestPaneMode
-} from '@zennotes/app-core/lib/pane-mode'
-import {
-  isSameFileHeadingLink,
-  resolveWikilinkTarget,
-  wikilinkHeadingAnchor
-} from '@zennotes/app-core/lib/wikilinks'
-import {
-  openDatabaseFromWikilink,
-  openWikilinkHeading
-} from '@zennotes/app-core/lib/wikilink-navigation'
+import { getShellSnapshot, useShellSnapshot, subscribeShell, getAdjacentNotePath,
+  getTagPresenceSnapshot, subscribeTagPresence } from '@zennotes/app-core/shell'
+import { getBrowseSnapshot, requestCreateBrowseFolder, requestDeleteBrowseDirectory } from '@zennotes/app-core/browse'
+import { getWorkspaceSnapshot, useWorkspaceSnapshot, subscribeWorkspace, readPersistedHomeState,
+  configureWorkspacePresentation, pickLocalVault, openLocalVault, connectRemoteProfile, refreshRemoteProfiles } from '@zennotes/app-core/workspace'
+import { getSettingsSnapshot, useSettingsSnapshot, subscribeSettings, setSettingsVisible, setEditorFontSize } from '@zennotes/app-core/settings'
+import { useEditorPresentation, setEditorMode, hasEditorSelection, runEditorCommand } from '@zennotes/app-core/editor'
+import { getTasksSnapshot, moveTaskToColumn, type KanbanGroupBy } from '@zennotes/app-core/tasks'
+import { runAppCommand, showCommandPalette, showSearch, showTemplates, showOutline } from '@zennotes/app-core/commands'
+import { openNote, openWikilink, openTodayDailyNote } from '@zennotes/app-core/navigation'
+import { requestTrashNote } from '@zennotes/app-core/notes'
 import { MobileEditorToolbar } from './EditorToolbar'
-import { promptApp } from '@zennotes/app-core/lib/prompt-requests'
-import { confirmApp } from '@zennotes/app-core/lib/confirm-requests'
-import { notePathWithinFolder } from '@zennotes/app-core/lib/vault-layout'
-import { noteTagsForCount } from '@zennotes/app-core/lib/tags'
-import { resolveTypstPreambleFolder } from '@zennotes/app-core/lib/typst-preamble'
-import { csvPathFromDatabaseTab, formDirFromCsvPath } from '@zennotes/shared-domain/databases'
+import { captureMobileWorkspace, reportActionError } from './workspace-context'
 import { MobileDrawer } from './MobileDrawer'
 import { isDrawerOpen, setDrawerOpen, useDrawerOpen } from './drawer-state'
 import { goHome } from './nav'
@@ -68,11 +53,6 @@ import { WELCOME_PENDING_KEY, FAB_HINT_KEY } from './Onboarding'
 import { WELCOME_NOTE_PATH } from '../bridge/welcome-note'
 import ensoUrl from '../assets/enso.png'
 import { getStoragePref } from '../bridge/icloud'
-import {
-  createTagsEmptyStateTracker,
-  type TagsEmptyStateSnapshot
-} from './tags-empty-state'
-import { siblingNotesInDrawerOrder } from './note-order'
 import { getPinnedNotes, loadPins } from './pins'
 import { vaultSettingsAccessForLayout } from './vault-settings-access'
 import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
@@ -100,10 +80,8 @@ function isPhoneWidth(): boolean {
 
 /** Run a command from the shared registry by id (same path the palette uses). */
 function runCommand(id: string): void {
-  const cmd = buildCommands({ includeUnavailable: true }).find((c) => c.id === id)
-  if (!cmd) return
-  if (cmd.when && !cmd.when()) return
-  void cmd.run()
+  void runAppCommand(id).catch(reportActionError)
+
 }
 
 function Icon({ d, filled }: { d: string; filled?: boolean }): React.JSX.Element {
@@ -200,56 +178,22 @@ const APP_ROWS: SheetRow[] = [
 ]
 
 function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const selectedPath = useStore((s) => s.selectedPath)
-  const workspaceMode = useStore((s) => s.workspaceMode)
-  // Virtual tabs (zen://help, zen://tasks, ...) aren't notes — their rows
-  // (rename/trash/...) would silently no-op.
-  const hasNote = Boolean(selectedPath) && !selectedPath?.startsWith('zen://')
-  const noteFolder = useStore((s) => {
-    if (!s.selectedPath) return null
-    return s.notes.find((n) => n.path === s.selectedPath)?.folder ?? null
-  })
-  const calendarAvailable = useStore(
-    (s) => s.vaultSettings.dailyNotes.enabled || s.vaultSettings.weeklyNotes.enabled
-  )
-  // With a database tab open, offer its removal — every open thing should be
-  // deletable from •••.
-  const dbFormDir = useStore((s) => {
-    const csv = csvPathFromDatabaseTab(s.selectedPath)
-    return csv ? formDirFromCsvPath(csv) : null
-  })
-  const dbTitle = dbFormDir
-    ? (dbFormDir.split('/').pop() ?? '').replace(/\.base$/i, '')
-    : null
-  const title = useStore((s) => {
-    if (!s.selectedPath) return 'ZenNotes'
-    const note = s.notes.find((n) => n.path === s.selectedPath)
-    return note?.title ?? 'ZenNotes'
-  })
-
+  const shell = useShellSnapshot()
+  const { selectedPath, workspaceMode } = shell
+  const hasNote = !!shell.selectedNote
+  const noteFolder = shell.selectedNote?.folder ?? null
+  const { calendarAvailable } = useSettingsSnapshot()
+  const database = getBrowseSnapshot().databases.find(row => row.path === selectedPath)
+  const dbFormDir = database?.directory ?? null
+  const dbTitle = database?.title ?? null
+  const title = shell.selectedNote?.title ?? 'ZenNotes'
+  const workspace = useWorkspaceSnapshot()
+  const host = useMemo(() => captureMobileWorkspace(), [shell.vault, workspaceMode, workspace.generation, workspace.transitioning])
   const deleteOpenDatabase = (): void => {
-    const formDir = dbFormDir
-    const label = dbTitle
-    if (!formDir || label === null) return
+    if (!dbFormDir) return
     onClose()
     window.setTimeout(() => {
-      void (async () => {
-        const ok = await confirmApp({
-          title: `Delete "${label}"?`,
-          description: 'All records will be permanently deleted. This cannot be undone.',
-          confirmLabel: 'Delete',
-          danger: true
-        })
-        if (!ok) return
-        // Remap-aware: the inbox may live in a renamed directory
-        // (vault.json systemFolderPaths), so strip the RESOLVED prefix.
-        const subpath = notePathWithinFolder(
-          formDir,
-          'inbox',
-          useStore.getState().vaultSettings
-        )
-        await useStore.getState().deleteFolder('inbox', subpath)
-      })()
+      void requestDeleteBrowseDirectory(host, dbFormDir).catch(reportActionError)
     }, 30)
   }
 
@@ -259,7 +203,7 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
     // focus lands in the right place.
     window.setTimeout(() => {
       if (id === 'zn.palette') {
-        useStore.getState().setCommandPaletteOpen(true)
+        showCommandPalette()
         return
       }
       if (id === 'zn.vaults') {
@@ -267,26 +211,12 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
         return
       }
       if (id === 'zn.pickfolder') {
-        void useStore.getState().openVaultPicker()
+        void pickLocalVault()
         return
       }
+      if (!host.isCurrent()) return
       if (id === 'note.trash') {
-        // Own the confirm copy ("Delete") — app-core's command would show its
-        // desktop "Move to Trash?" dialog. The bridge's unlink event closes
-        // the tab via applyChange.
-        void (async () => {
-          const st = useStore.getState()
-          const path = st.selectedPath
-          if (!path) return
-          const noteTitle = st.notes.find((n) => n.path === path)?.title
-          const ok = await confirmApp({
-            title: `Delete "${noteTitle ?? 'this note'}"?`,
-            description: 'It will move to the trash.',
-            confirmLabel: 'Delete',
-            danger: true
-          })
-          if (ok) await window.zen.moveToTrash(path)
-        })()
+        if (selectedPath) void requestTrashNote(host, selectedPath).catch(reportActionError)
         return
       }
       runCommand(id)
@@ -384,22 +314,14 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
  * quick-action chips are hidden on phones, so this is its one-tap home.
  */
 function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const dailyEnabled = useStore((s) => s.vaultSettings.dailyNotes.enabled)
+  const dailyEnabled = useSettingsSnapshot().dailyNotesEnabled
   const run = (fn: () => unknown): void => {
     onClose()
     window.setTimeout(() => void fn(), 30)
   }
 
   const newFolder = async (): Promise<void> => {
-    const name = await promptApp({
-      title: 'New folder',
-      placeholder: 'Folder name',
-      okLabel: 'Create',
-      validate: (v: string) => (v.includes('/') ? 'Folder name cannot contain "/"' : null)
-    })
-    const clean = name?.trim().replace(/^\/+|\/+$/g, '')
-    if (!clean) return
-    await useStore.getState().createFolder('inbox', clean)
+    await requestCreateBrowseFolder(captureMobileWorkspace(), '').catch(reportActionError)
   }
 
   return (
@@ -430,7 +352,7 @@ function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
               <button
                 type="button"
                 className="zn-mobile-sheet-row"
-                onClick={() => run(() => useStore.getState().openTodayDailyNote())}
+                onClick={() => run(() => openTodayDailyNote())}
               >
                 <Icon d={ICONS.calendar} />
                 Daily note
@@ -439,7 +361,7 @@ function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
             <button
               type="button"
               className="zn-mobile-sheet-row"
-              onClick={() => run(() => useStore.getState().setTemplatePaletteOpen(true))}
+              onClick={() => run(() => showTemplates())}
             >
               <Icon d={ICONS.template} />
               New from template
@@ -468,24 +390,9 @@ function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
 }
 
 function MobileNav(): React.JSX.Element | null {
-  const vault = useStore((s) => s.vault)
-  const setSearchOpen = useStore((s) => s.setSearchOpen)
-  // A real note is open (not Home/Tasks/Tags/a database) → offer the Edit/Read
-  // toggle in the dial. `activeNote` is the loaded markdown note's meta.
-  const hasOpenNote = useStore((s) => Boolean(s.activeNote))
-  // Effective mode mirrors EditorPane: the pane's sticky mode wins only when
-  // "keep view mode across notes" is on; otherwise it's the per-note mode.
-  // Selector returns a primitive string, so no fresh-object re-render footgun.
-  const isPreview = useStore((s) => {
-    const path = s.selectedPath
-    if (!path) return false
-    const sticky = s.paneStickyModes[s.activePaneId]
-    const mode =
-      s.keepViewModeAcrossNotes && sticky
-        ? sticky
-        : paneModeForPath(s.paneModes[s.activePaneId] ?? {}, path)
-    return mode === 'preview'
-  })
+  const vault = useShellSnapshot().vault
+  const { hasOpenNote, mode } = useEditorPresentation()
+  const isPreview = mode === 'preview'
   const [sheetOpen, setSheetOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [fabOpen, setFabOpen] = useState(false)
@@ -545,7 +452,7 @@ function MobileNav(): React.JSX.Element | null {
           {
             label: isPreview ? 'Edit' : 'Read',
             icon: isPreview ? ICONS.rename : ICONS.eye,
-            run: () => requestPaneMode(isPreview ? 'edit' : 'preview')
+            run: () => setEditorMode(isPreview ? 'edit' : 'preview')
           },
           {
             label: 'Publish',
@@ -556,7 +463,7 @@ function MobileNav(): React.JSX.Element | null {
       : []),
     { label: 'More', icon: ICONS.more, run: () => setSheetOpen(true) },
     { label: 'Browse', icon: ICONS.sidebar, run: () => setDrawerOpen(true) },
-    { label: 'Search', icon: ICONS.search, run: () => setSearchOpen(true) },
+    { label: 'Search', icon: ICONS.search, run: showSearch },
     { label: 'New', icon: ICONS.capture, run: () => setCreateOpen(true) }
   ]
 
@@ -641,35 +548,15 @@ function usePhoneLayoutBoot(): void {
     // in the note the user had just left. Once, and recoverable — the
     // cache itself is keyed by a vault root the shell doesn't know yet.)
     let persistedHome: boolean | null = null
-    void (async () => {
-      try {
-        const raw = await window.zen.readWorkspaceState()
-        if (!raw) {
-          persistedHome = true
-          return
-        }
-        const snap = JSON.parse(raw) as {
-          paneLayout?: unknown
-          activePaneId?: unknown
-        }
-        const leaf = findLeaf(
-          snap.paneLayout as Parameters<typeof findLeaf>[0],
-          typeof snap.activePaneId === 'string' ? snap.activePaneId : ''
-        )
-        persistedHome = !leaf || leaf.activeTab === null
-      } catch {
-        persistedHome = true
-      }
-    })()
+    void readPersistedHomeState().then(value => { persistedHome = value })
     const apply = (): void => {
-      const s = useStore.getState()
-      const restored = Boolean(s.vault) && s.workspaceRestored
+      const restored = getWorkspaceSnapshot().restored
       const edge = restored && !wasRestored
       wasRestored = restored
       if (!edge) return
       // Panels close, and daily/weekly notes must not auto-summon the
       // calendar over a phone-sized editor (it's one tap away in •••).
-      useStore.setState({ sidebarOpen: false, noteListOpen: false, autoCalendarPanel: false })
+      configureWorkspacePresentation({ sidebarVisible: false, noteListVisible: false, automaticCalendar: false })
       if (!firstLanding) {
         goHome()
         return
@@ -688,21 +575,10 @@ function usePhoneLayoutBoot(): void {
       // note opens so the pane never flashes edit mode.
       if (localStorage.getItem(WELCOME_PENDING_KEY)) {
         localStorage.removeItem(WELCOME_PENDING_KEY)
-        const after = useStore.getState()
-        useStore.setState({
-          paneModes: {
-            ...after.paneModes,
-            [after.activePaneId]: paneModesWithPathMode(
-              after.paneModes[after.activePaneId] ?? {},
-              WELCOME_NOTE_PATH,
-              'preview'
-            )
-          }
-        })
-        after.selectNote(WELCOME_NOTE_PATH).catch(() => {})
+        void openNote(WELCOME_NOTE_PATH, { mode: 'preview' }).catch(reportActionError)
       }
     }
-    const unsub = useStore.subscribe(apply)
+    const unsub = subscribeWorkspace(apply)
     apply()
     return () => unsub()
   }, [])
@@ -714,22 +590,8 @@ function usePhoneLayoutBoot(): void {
  * don't want the soft keyboard popping up after a navigation tap).
  */
 function openWikilinkFromTouch(target: string): void {
-  const s = useStore.getState()
-  const anchor = wikilinkHeadingAnchor(target)
-  const resolved = resolveWikilinkTarget(s.notes, target)
-  if (!resolved) {
-    if (anchor && isSameFileHeadingLink(target) && s.selectedPath) {
-      void openWikilinkHeading(s.selectedPath, anchor)
-      return
-    }
-    openDatabaseFromWikilink(target)
-    return
-  }
-  if (!anchor) {
-    void s.selectNote(resolved.path)
-    return
-  }
-  void openWikilinkHeading(resolved.path, anchor)
+  void openWikilink(target).catch(reportActionError)
+
 }
 
 /**
@@ -745,8 +607,7 @@ function useWikilinkTapNavigation(): void {
       open: openWikilinkFromTouch,
       hasSelection: () => {
         const selection = window.getSelection()
-        const view = useStore.getState().editorViewRef
-        return Boolean((selection && !selection.isCollapsed) || (view && !view.state.selection.main.empty))
+        return Boolean((selection && !selection.isCollapsed) || hasEditorSelection())
       }
     })
   }, [])
@@ -769,7 +630,7 @@ function useBreadcrumbDrawerNav(): void {
       // view holds the tapped folder's subpath, which is exactly the drawer's
       // drill-down path (both are relative to the primary notes area).
       window.setTimeout(() => {
-        const view = useStore.getState().view
+        const view = getWorkspaceSnapshot().folder
         const subpath = view?.kind === 'folder' ? view.subpath : ''
         setDrawerOpen(true, subpath)
       }, 0)
@@ -905,33 +766,20 @@ const TAGS_EMPTY_STOCK = 'Pick one or more tags above to see matching notes.'
 const TAGS_EMPTY_TEACH =
   'No tags yet. Create one by typing # in any note — try #ideas. Every tag you write shows up here.'
 
-function tagsEmptyStateSnapshot(
-  state: ReturnType<typeof useStore.getState>
-): TagsEmptyStateSnapshot {
-  return {
-    vaultRoot: state.vault?.root ?? null,
-    notes: state.notes,
-    activeNote: state.activeNote,
-    preambleFolder: resolveTypstPreambleFolder(
-      state.vaultSettings?.typstPreambles?.folder
-    ),
-    indexReady: isMobileNoteIndexReady()
-  }
-}
-
 function useTagsEmptyStateHint(): void {
   useEffect(() => {
-    const tracker = createTagsEmptyStateTracker(
-      tagsEmptyStateSnapshot(useStore.getState()),
-      noteTagsForCount
-    )
+    const current = (): 'loading' | 'tagless' | 'tagged' => {
+      if (!isMobileNoteIndexReady() || !getShellSnapshot().workspaceRestored) return 'loading'
+      return getTagPresenceSnapshot().hasTags ? 'tagged' : 'tagless'
+    }
+    let previous = current()
     const patch = (el: HTMLElement, from: string, to: string): void => {
       if (el.tagName === 'DIV' && el.childElementCount === 0 && el.textContent === from) {
         el.textContent = to
       }
     }
     const apply = (root: ParentNode): void => {
-      const state = tracker.getState()
+      const state = current()
       if (state === 'loading') return
       const [from, to] =
         state === 'tagless' ? [TAGS_EMPTY_STOCK, TAGS_EMPTY_TEACH] : [TAGS_EMPTY_TEACH, TAGS_EMPTY_STOCK]
@@ -954,9 +802,13 @@ function useTagsEmptyStateHint(): void {
     observer.observe(document.body, { childList: true, characterData: true, subtree: true })
     // Re-scan the document only when the derived tagged/tagless state changes;
     // unrelated store updates and ordinary keystrokes never query the DOM.
-    const unsub = useStore.subscribe((state) => {
-      if (tracker.update(tagsEmptyStateSnapshot(state))) apply(document)
-    })
+    const update = (): void => {
+      const next = current()
+      if (next !== previous) { previous = next; apply(document) }
+    }
+    const unsubTags = subscribeTagPresence(update)
+    const unsubShell = subscribeShell(update)
+    const unsub = (): void => { unsubTags(); unsubShell() }
     apply(document)
     return () => {
       observer.disconnect()
@@ -1065,7 +917,7 @@ function useNoteSwipeGestures(): void {
     const TRIGGER = 80
     const VSLOP = 44
     const MAX_MS = 400
-    let start: { x: number; y: number; t: number; target: EventTarget | null } | null = null
+    let start: { x: number; y: number; t: number; target: EventTarget | null; host: ReturnType<typeof captureMobileWorkspace> } | null = null
 
     const horizontallyScrollableAncestor = (
       el: HTMLElement | null,
@@ -1089,20 +941,20 @@ function useNoteSwipeGestures(): void {
       const target = e.target as HTMLElement | null
       // Only over the note surface — not the toolbar, FAB, sheets, headers.
       if (!target?.closest?.('.cm-editor, .prose-zen')) return
-      start = { x: t.clientX, y: t.clientY, t: Date.now(), target }
+      start = { x: t.clientX, y: t.clientY, t: Date.now(), target, host: captureMobileWorkspace() }
     }
 
     const onTouchEnd = (e: TouchEvent): void => {
       const s0 = start
       start = null
-      if (!s0 || e.changedTouches.length !== 1) return
+      if (!s0 || !s0.host.isCurrent() || e.changedTouches.length !== 1) return
       if (Date.now() - s0.t > MAX_MS) return
       const t = e.changedTouches[0]!
       const dx = t.clientX - s0.x
       const dy = Math.abs(t.clientY - s0.y)
       if (Math.abs(dx) < TRIGGER || dy > VSLOP || dy > Math.abs(dx) / 2) return
       const sel = window.getSelection()
-      if (sel && !sel.isCollapsed) return
+      if ((sel && !sel.isCollapsed) || hasEditorSelection()) return
       const dir: -1 | 1 = dx < 0 ? -1 : 1
       if (horizontallyScrollableAncestor(s0.target as HTMLElement | null, dir)) return
 
@@ -1113,28 +965,14 @@ function useNoteSwipeGestures(): void {
         setDrawerOpen(true)
         return
       }
-      if (action === 'outline') {
-        const st = useStore.getState()
-        if (st.activeNote) st.setOutlinePaletteOpen(true)
-        return
-      }
-
-      const state = useStore.getState()
-      const activePath = state.activeNote?.path
+      if (action === 'outline') { showOutline(); return }
+      const shell = getShellSnapshot()
+      const activePath = shell.selectedNote?.path
       if (!activePath) return
-      const vaultRoot = state.vault?.root ?? null
-      const siblings = siblingNotesInDrawerOrder(
-        state,
-        activePath,
-        vaultRoot ? getPinnedNotes(vaultRoot) : []
-      )
-      if (!siblings || siblings.length < 2) return
-      const idx = siblings.findIndex((n) => n.path === activePath)
-      if (idx === -1) return
-      // Swipe left (dx<0) → next note; swipe right → previous. Stop at ends.
-      const next = siblings[idx + (dir === -1 ? 1 : -1)]
-      if (!next) return
-      void state.selectNote(next.path)
+      const next = getAdjacentNotePath(shell, activePath, dir === -1 ? 'next' : 'previous',
+        getPinnedNotes(shell.vault?.root ?? null))
+      if (next) void openNote(next)
+
     }
 
     const onTouchMove = (e: TouchEvent): void => {
@@ -1249,10 +1087,9 @@ function usePullDownAction(): void {
       const fire = armed && start !== null
       reset()
       if (!fire) return
-      const st = useStore.getState()
       const action = getGesturePrefs().pullDown
-      if (action === 'palette') st.setCommandPaletteOpen(true)
-      else if (action === 'search') st.setSearchOpen(true)
+      if (action === 'palette') showCommandPalette()
+      else if (action === 'search') showSearch()
       else if (action === 'new') window.dispatchEvent(new Event('zn:quick-create'))
     }
 
@@ -1303,7 +1140,7 @@ function usePinchFontSize(): void {
         base = null
         return
       }
-      base = { dist: dist(e), size: useStore.getState().editorFontSize }
+      base = { dist: dist(e), size: getSettingsSnapshot().editorFontSize }
     }
 
     const onTouchMove = (e: TouchEvent): void => {
@@ -1313,12 +1150,14 @@ function usePinchFontSize(): void {
         MIN,
         Math.min(MAX, Math.round(base.size * (dist(e) / base.dist)))
       )
-      const state = useStore.getState()
-      if (state.editorFontSize !== next) state.setEditorFontSize(next)
+      if (getSettingsSnapshot().editorFontSize !== next) setEditorFontSize(next, { persist: false })
     }
 
     const onTouchEnd = (e: TouchEvent): void => {
-      if (e.touches.length < 2) base = null
+      if (e.touches.length < 2 && base) {
+        setEditorFontSize(getSettingsSnapshot().editorFontSize)
+        base = null
+      }
     }
 
     document.addEventListener('touchstart', onTouchStart, { passive: true, capture: true })
@@ -1553,9 +1392,9 @@ function useRightPanelCloseButton(): void {
 function useDrawerAutoClose(): void {
   useEffect(() => {
     if (!isPhoneWidth()) return
-    let lastSelected = useStore.getState().selectedPath
-    return useStore.subscribe(() => {
-      const s = useStore.getState()
+    let lastSelected = getShellSnapshot().selectedPath
+    return subscribeShell(() => {
+      const s = getShellSnapshot()
       if (s.selectedPath !== lastSelected) {
         lastSelected = s.selectedPath
         if (s.selectedPath) setDrawerOpen(false)
@@ -1694,7 +1533,7 @@ function mobilizeSettingsPanel(panel: HTMLElement): void {
   done.className = 'zn-settings-done'
   done.textContent = 'Done'
   done.addEventListener('click', () => {
-    useStore.getState().setSettingsOpen(false)
+    setSettingsVisible(false)
   })
   panel.appendChild(done)
 }
@@ -1714,8 +1553,8 @@ function useSettingsMobilizer(): void {
       }
       if (attempt < 30) raf = requestAnimationFrame(() => scan(attempt + 1))
     }
-    const unsub = useStore.subscribe(() => {
-      if (useStore.getState().settingsOpen) {
+    const unsub = subscribeSettings(() => {
+      if (getSettingsSnapshot().open) {
         cancelAnimationFrame(raf)
         scan(0)
       }
@@ -1779,7 +1618,7 @@ function useHeaderBackButton(): void {
     if (!isPhoneWidth()) return
     let raf = 0
     const goBack = (): void => {
-      if (useStore.getState().noteBackstack.length > 0) runCommand('nav.back')
+      if (getShellSnapshot().canGoBack) runCommand('nav.back')
       else goHome()
     }
     const apply = (): void => {
@@ -1853,7 +1692,7 @@ function useSystemBackClose(): void {
       const settings = document.querySelector<HTMLElement>('[data-zn-settings]')
       if (settings) {
         if (settings.dataset.znView === 'detail') settings.dataset.znView = 'nav'
-        else useStore.getState().setSettingsOpen(false)
+        else setSettingsVisible(false)
         return
       }
       // 5. Any remaining modal (prompts, confirms, dialogs).
@@ -1873,22 +1712,17 @@ function useSystemBackClose(): void {
       }
       // 8. The in-note search panel (toolbar's Find button).
       if (document.querySelector('.cm-panel.cm-search')) {
-        const v = useStore.getState().editorViewRef
-        if (v) {
-          closeSearchPanel(v)
-          return
-        }
+        if (runEditorCommand('close-search')) return
       }
       // 9. Phone navigation: jump history, then up to Home — the same
       //    fallback order as the header back chevron.
       if (isPhoneWidth()) {
-        const s = useStore.getState()
-        if (s.noteBackstack.length > 0) {
+        const s = getShellSnapshot()
+        if (s.canGoBack) {
           runCommand('nav.back')
           return
         }
-        const leaf = findLeaf(s.paneLayout, s.activePaneId)
-        if (leaf && leaf.activeTab !== null) {
+        if (s.selectedPath !== null) {
           goHome()
           return
         }
@@ -1927,58 +1761,6 @@ function kanbanColumnLabel(groupBy: string, id: string): string {
   return id
 }
 
-function kanbanDropMutations(
-  groupBy: string,
-  columnId: string,
-  task: VaultTask
-): TaskMutation[] | null {
-  if (groupBy === 'status') {
-    const todayIso = toIsoDateLocal(new Date())
-    switch (columnId) {
-      case 'today':
-        return [
-          { kind: 'set-checked', checked: false },
-          { kind: 'set-waiting', waiting: false },
-          { kind: 'set-due', due: todayIso }
-        ]
-      case 'upcoming': {
-        const tomorrow = new Date()
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        return [
-          { kind: 'set-checked', checked: false },
-          { kind: 'set-waiting', waiting: false },
-          {
-            kind: 'set-due',
-            due: task.due && task.due > todayIso ? task.due : toIsoDateLocal(tomorrow)
-          }
-        ]
-      }
-      case 'waiting':
-        return [
-          { kind: 'set-checked', checked: false },
-          { kind: 'set-waiting', waiting: true }
-        ]
-      case 'done':
-        return [{ kind: 'set-checked', checked: true }]
-      default:
-        return null
-    }
-  }
-  if (groupBy === 'priority') {
-    if (columnId === 'high') return [{ kind: 'set-priority', priority: 'high' }]
-    if (columnId === 'med') return [{ kind: 'set-priority', priority: 'med' }]
-    if (columnId === 'low') return [{ kind: 'set-priority', priority: 'low' }]
-    if (columnId === 'none') return [{ kind: 'set-priority', priority: null }]
-    return null
-  }
-  if (groupBy.startsWith('field:')) {
-    const key = groupBy.slice('field:'.length)
-    return [{ kind: 'set-field', key, value: columnId === KANBAN_NO_VALUE_COLUMN ? null : columnId }]
-  }
-  // Folder grouping is read-only (moving means moving the note).
-  return null
-}
-
 /** Inject a move handle into every Kanban card; on tap it dispatches the task
  *  id + current column so the shell's move sheet can offer the other columns.
  *  Skipped on folder boards (moving isn't defined there). */
@@ -1999,7 +1781,7 @@ function useKanbanMoveHandles(): void {
       window.dispatchEvent(new CustomEvent('zen:kanban-move', { detail: { taskId, currentCol } }))
     }
     const ensure = (): void => {
-      if (useStore.getState().kanbanGroupBy === 'folder') {
+      if (getTasksSnapshot().groupBy === 'folder') {
         for (const b of document.querySelectorAll('.zn-kanban-move')) b.remove()
         return
       }
@@ -2031,12 +1813,9 @@ function useKanbanMoveHandles(): void {
   }, [])
 }
 
-function kanbanApplyMove(taskId: string, columnId: string): void {
-  const groupBy = useStore.getState().kanbanGroupBy
-  const task = useStore.getState().vaultTasks.find((t) => t.id === taskId)
-  if (!task) return
-  const muts = kanbanDropMutations(groupBy, columnId, task)
-  if (muts && muts.length > 0) void useStore.getState().applyTaskMutation(task, muts)
+function kanbanApplyMove(taskId: string, columnId: string, host: ReturnType<typeof captureMobileWorkspace>, groupBy: KanbanGroupBy): void {
+  void moveTaskToColumn(host, taskId, groupBy, columnId).catch(reportActionError)
+
 }
 
 /**
@@ -2058,6 +1837,8 @@ function useKanbanCardDrag(): void {
     let ghost: HTMLElement | null = null
     let card: HTMLElement | null = null
     let taskId: string | null = null
+    let dragHost = captureMobileWorkspace()
+    let dragGroup = getTasksSnapshot().groupBy
     let sourceCol: string | null = null
     let pointerId = -1
     let startX = 0
@@ -2158,6 +1939,8 @@ function useKanbanCardDrag(): void {
       e.stopPropagation()
       card = c
       taskId = c.getAttribute('data-kanban-task-id')
+      dragHost = captureMobileWorkspace()
+      dragGroup = getTasksSnapshot().groupBy
       sourceCol =
         c.closest<HTMLElement>('[data-kanban-column-id]')?.getAttribute('data-kanban-column-id') ??
         null
@@ -2200,7 +1983,7 @@ function useKanbanCardDrag(): void {
       lastY = e.clientY
       if (dragging) {
         const col = columnUnder(lastX, lastY)?.getAttribute('data-kanban-column-id') ?? null
-        if (col && col !== sourceCol && taskId) kanbanApplyMove(taskId, col)
+        if (col && col !== sourceCol && taskId) kanbanApplyMove(taskId, col, dragHost, dragGroup)
         suppressClickUntil = Date.now() + 400
       }
       reset()
@@ -2239,7 +2022,8 @@ function useKanbanCardDrag(): void {
 
 interface KanbanMoveState {
   taskId: string
-  groupBy: string
+  groupBy: KanbanGroupBy
+  host: ReturnType<typeof captureMobileWorkspace>
   targets: Array<{ id: string; label: string }>
 }
 
@@ -2250,7 +2034,7 @@ function KanbanMoveSheet(): React.JSX.Element | null {
       const detail = (e as CustomEvent<{ taskId?: string; currentCol?: string | null }>).detail
       const taskId = detail?.taskId
       if (!taskId) return
-      const groupBy = useStore.getState().kanbanGroupBy
+      const groupBy = getTasksSnapshot().groupBy
       if (groupBy === 'folder') return
       const cols = [...document.querySelectorAll<HTMLElement>('[data-kanban-column-id]')]
         .map((el) => el.getAttribute('data-kanban-column-id'))
@@ -2259,7 +2043,7 @@ function KanbanMoveSheet(): React.JSX.Element | null {
         .filter((id) => id !== detail?.currentCol)
         .map((id) => ({ id, label: kanbanColumnLabel(groupBy, id) }))
       if (targets.length === 0) return
-      setState({ taskId, groupBy, targets })
+      setState({ taskId, groupBy, targets, host: captureMobileWorkspace() })
     }
     window.addEventListener('zen:kanban-move', onMove)
     return () => window.removeEventListener('zen:kanban-move', onMove)
@@ -2281,7 +2065,7 @@ function KanbanMoveSheet(): React.JSX.Element | null {
   const pick = (columnId: string): void => {
     const id = state.taskId
     setState(null)
-    kanbanApplyMove(id, columnId)
+    kanbanApplyMove(id, columnId, state.host, state.groupBy)
   }
 
   return (
@@ -2359,7 +2143,7 @@ const SETTINGS_VAULT_ACTION_CLASS =
  *  external folders all live there. It replaces Settings rather than stacking
  *  under it. */
 function openVaultManagerFromSettings(): void {
-  useStore.getState().setSettingsOpen(false)
+  setSettingsVisible(false)
   window.setTimeout(() => openMobileSheet('vaults'), 30)
 }
 
@@ -2376,11 +2160,10 @@ function SettingsVaultManageButton(): React.JSX.Element {
 }
 
 function SettingsVaultQuickSwitch(): React.JSX.Element {
-  const currentName = useStore((s) => s.vault?.name ?? null)
-  const currentRoot = useStore((s) => s.vault?.root ?? '')
-  const workspaceMode = useStore((s) => s.workspaceMode)
-  const remoteProfileId = useStore((s) => s.remoteWorkspaceInfo?.profileId ?? null)
-  const remoteProfiles = useStore((s) => s.remoteWorkspaceProfiles)
+  const shell = useShellSnapshot()
+  const currentName = shell.vault?.name ?? null
+  const currentRoot = shell.vault?.root ?? ''
+  const { mode: workspaceMode, remoteProfileId, remoteProfiles } = useWorkspaceSnapshot()
   const [entries, setEntries] = useState<MobileVaultEntry[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -2390,7 +2173,7 @@ function SettingsVaultQuickSwitch(): React.JSX.Element {
     void listSwitchableVaults()
       .then((v) => alive && setEntries(v))
       .catch(() => {})
-    void useStore.getState().refreshRemoteWorkspaceProfiles()
+    void refreshRemoteProfiles()
     return () => {
       alive = false
     }
@@ -2427,7 +2210,7 @@ function SettingsVaultQuickSwitch(): React.JSX.Element {
       name: e.name,
       loc: e.tier === 'icloud' ? 'iCloud Drive' : e.tier === 'external' ? 'Folder' : 'On this device',
       current: currentTier === e.tier && e.name === currentName,
-      switchTo: () => useStore.getState().openLocalVault(e.root)
+      switchTo: () => openLocalVault(e.root)
     })),
     ...remoteProfiles.map((p) => {
       const host = hostOf(p.baseUrl)
@@ -2436,7 +2219,7 @@ function SettingsVaultQuickSwitch(): React.JSX.Element {
         name: p.name.replace(` (${host})`, '').trim() || p.name,
         loc: host,
         current: workspaceMode === 'remote' && p.id === remoteProfileId,
-        switchTo: () => useStore.getState().connectRemoteWorkspaceProfile(p.id)
+        switchTo: () => connectRemoteProfile(p.id)
       }
     })
   ]

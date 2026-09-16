@@ -1,3 +1,4 @@
+import { relocateLocalVault } from '@zennotes/app-core/workspace'
 /**
  * The mobile `window.zen` — third ZenBridge implementation (after Electron IPC
  * and the web HTTP bridge). Vault operations run against the on-device vault
@@ -36,13 +37,13 @@ import type {
   VaultTextSearchBackendPreference,
   VaultTextSearchCapabilities,
   VaultTextSearchMatch
-} from '@shared/ipc'
-import { createDatabaseOps } from '@shared/database-ops'
+} from '@zennotes/shared-domain/ipc'
+import { createDatabaseOps } from '@zennotes/shared-domain/database-ops'
 import type {
   CustomCodeLanguage,
   CustomCodeLanguageInstallInput,
   CustomCodeLanguageUpdateInput
-} from '@shared/custom-code-languages'
+} from '@zennotes/shared-domain/custom-code-languages'
 import type {
   ApplyWorkflowInput,
   WorkflowFile,
@@ -50,12 +51,12 @@ import type {
   WorkflowRunSummary,
   WorkflowUndoResult,
   WriteWorkflowInput
-} from '@bridge-contract/workflows'
+} from '@zennotes/bridge-contract/workflows'
 import type {
   McpClientStatus,
   McpInstructionsPayload,
   McpServerRuntime
-} from '@shared/mcp-clients'
+} from '@zennotes/shared-domain/mcp-clients'
 import { MobileVault } from './vault-fs'
 import { listVaultDirs, VAULTS_DIR, vaultsRoot, initVaultsRoot } from './native-fs'
 import { Filesystem } from '@capacitor/filesystem'
@@ -131,7 +132,7 @@ import {
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 import { isPhoneViewport } from '../viewport'
 
-let appVersion = '1.1.20'
+let appVersion = '1.1.21'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {
@@ -276,23 +277,22 @@ export async function renameVault(entry: MobileVaultEntry, newName: string): Pro
   if (!clean) throw new Error('Enter a name.')
   if (clean === entry.name) return
   if (entry.tier === 'external') throw new Error('Rename this folder in your file manager.')
-  await assertNameFree(entry.tier, clean)
   const wasCurrent = isCurrentVaultEntry(entry)
-  if (entry.tier === 'icloud') {
-    await Filesystem.rename({
-      from: await icloudVaultUrl(entry.name),
-      to: await icloudVaultUrl(clean)
-    })
-    if (wasCurrent) await openVaultByName(clean, await icloudVaultUrl(clean))
-  } else {
-    await Filesystem.rename({
-      from: `${VAULTS_DIR}/${entry.name}`,
-      to: `${VAULTS_DIR}/${clean}`,
-      directory: vaultsRoot(),
-      toDirectory: vaultsRoot()
-    })
-    if (wasCurrent) await openVaultByName(clean)
-  }
+  const token = (name: string): string => entry.tier === 'icloud'
+    ? `${ICLOUD_VAULT_ROOT_PREFIX}${encodeURIComponent(name)}` : `${VAULT_ROOT_PREFIX}${name}`
+  let from = '', to = ''
+  await relocateLocalVault({
+    ...(wasCurrent ? { reopen: { source: token(entry.name), destination: token(clean) } } : {}),
+    move: async () => {
+      await assertNameFree(entry.tier, clean)
+      from = entry.tier === 'icloud' ? await icloudVaultUrl(entry.name) : `${VAULTS_DIR}/${entry.name}`
+      to = entry.tier === 'icloud' ? await icloudVaultUrl(clean) : `${VAULTS_DIR}/${clean}`
+      await Filesystem.rename({ from, to, ...(entry.tier === 'icloud' ? {} : { directory: vaultsRoot(), toDirectory: vaultsRoot() }) })
+    },
+    rollback: async () => {
+      await Filesystem.rename({ from: to, to: from, ...(entry.tier === 'icloud' ? {} : { directory: vaultsRoot(), toDirectory: vaultsRoot() }) })
+    }
+  })
 }
 
 /** Permanently removes the vault directory and everything in it. The UI owns
@@ -326,23 +326,26 @@ export function forgetExternalVault(root: string = EXTERNAL_VAULT_ROOT): void {
  *  the hood, so notes transfer — not copy). Reopens it when it's current. */
 export async function moveVault(entry: MobileVaultEntry, to: 'local' | 'icloud'): Promise<void> {
   if (entry.tier === 'external' || entry.tier === to) return
-  await assertNameFree(to, entry.name)
   const wasCurrent = isCurrentVaultEntry(entry)
-  const localPath = await localVaultPath(entry.name)
-  if (to === 'icloud') {
-    const status = await icloudStatus()
-    if (!status.available) {
-      throw new Error('iCloud is not available. Sign in to iCloud and turn on iCloud Drive.')
+  const token = (tier: 'local' | 'icloud'): string => tier === 'icloud'
+    ? `${ICLOUD_VAULT_ROOT_PREFIX}${encodeURIComponent(entry.name)}` : `${VAULT_ROOT_PREFIX}${entry.name}`
+  let localPath = ''
+  await relocateLocalVault({
+    ...(wasCurrent ? { reopen: { source: token(entry.tier), destination: token(to) } } : {}),
+    move: async () => {
+      await assertNameFree(to, entry.name)
+      localPath = await localVaultPath(entry.name)
+      if (to === 'icloud') {
+        const status = await icloudStatus()
+        if (!status.available) throw new Error('iCloud is not available. Sign in to iCloud and turn on iCloud Drive.')
+        await ICloudVault.enable({ localPath, name: entry.name })
+      } else await ICloudVault.disable({ name: entry.name, localPath })
+    },
+    rollback: async () => {
+      if (to === 'icloud') await ICloudVault.disable({ name: entry.name, localPath })
+      else await ICloudVault.enable({ localPath, name: entry.name })
     }
-    await ICloudVault.enable({ localPath, name: entry.name })
-  } else {
-    await ICloudVault.disable({ name: entry.name, localPath })
-  }
-  if (wasCurrent) {
-    setStoragePref(to)
-    if (to === 'icloud') await openVaultByName(entry.name, await icloudVaultUrl(entry.name))
-    else await openVaultByName(entry.name)
-  }
+  })
 }
 
 const MOBILE_CAPABILITIES: ZenCapabilities = {
@@ -376,7 +379,8 @@ function mobileAppInfo(): ZenAppInfo {
     version: appVersion,
     description: 'ZenNotes for Android',
     homepage: 'https://zennotes.org',
-    runtime: 'web'
+    runtime: 'web',
+    hostKind: 'android'
   }
 }
 
@@ -798,10 +802,11 @@ export const mobileBridge: ZenBridge = {
   getCapabilities: (): ZenCapabilities => MOBILE_CAPABILITIES,
   getAppInfo: (): ZenAppInfo => mobileAppInfo(),
 
-  // 'linux' gives app-core Ctrl-based keymaps and hides the Mac-only chrome —
-  // the right defaults for Android hardware keyboards.
-  platform: async () => 'linux' as NodeJS.Platform,
-  platformSync: () => 'linux' as NodeJS.Platform,
+  // 'android' (with hostKind above) lets app-core tell native shells apart;
+  // core only special-cases 'darwin', so Android still gets Ctrl-based keymaps
+  // and no Mac-only chrome — the right defaults for hardware keyboards.
+  platform: async () => 'android' as const,
+  platformSync: () => 'android' as const,
   // WebView-safe system families plus the fonts the shell bundles itself
   // (public/fonts + index.html @font-face): Android offers no way to install
   // fonts app-wide, so shipping them is the only path to real choices here.
@@ -1093,6 +1098,7 @@ export const mobileBridge: ZenBridge = {
   // External file links name OS paths outside the iOS sandbox; the exact
   // 'desktop-only' token makes app-core show its friendly toast.
   openExternalFile: async () => ({ ok: false, error: 'desktop-only' }),
+  openExternalUrl: async () => ({ ok: false, error: 'desktop-only' }),
   openAssetExternally: async () => notImplemented('openAssetExternally'),
   // Bookmark cards fetch open-graph metadata natively (link-metadata.ts) —
   // a WKWebView fetch of an arbitrary page would be CORS-blocked.

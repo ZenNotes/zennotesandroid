@@ -11,7 +11,7 @@ updates:
         dependency-type: development
     ignore:
       # The shell's React (and its types) must match the pinned ZenNotes
-      # source (.zennotes-commit); a second React or diverging @types/react
+      # package candidates (vendor/zennotes/manifest.json); a second React or diverging @types/react
       # breaks the pinned-source typecheck. These move with the pin only.
       - dependency-name: react
       - dependency-name: react-dom

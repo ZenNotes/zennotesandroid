@@ -24,8 +24,8 @@ import type {
   VaultInfo,
   VaultSettings,
   VaultTextSearchMatch
-} from '@shared/ipc'
-import type { VaultTask } from '@shared/tasks'
+} from '@zennotes/shared-domain/ipc'
+import type { VaultTask } from '@zennotes/shared-domain/tasks'
 import { importedAssetFilename } from './imported-assets.ts'
 
 export interface RemoteClientOptions {

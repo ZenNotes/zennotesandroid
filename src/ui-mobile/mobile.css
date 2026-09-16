@@ -2172,7 +2172,7 @@
    merely its scrollable content. The shell measures the live bubble bounds. */
 .zn-phone .cm-editor {
   box-sizing: border-box;
-  padding-bottom: var(--zn-selection-clearance, 0px);
+  /* Core reserves measured space for the native selection toolbar. */
 }
 
 /* Non-resizing keyboard mode (tablets — see wireKeyboard): the viewport

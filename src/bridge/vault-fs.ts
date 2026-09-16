@@ -1,3 +1,4 @@
+import { relocateVaultEntries, type VaultRelocation, type VaultRelocationIO } from '@zennotes/shared-domain/vault-relocation'
 /**
  * The on-device vault: desktop `vault.ts` semantics reimplemented over the
  * Capacitor Filesystem (there is no Node `fs` in a WKWebView). Same on-disk
@@ -19,21 +20,21 @@ import type {
   VaultDemoTourResult,
   VaultSettings,
   VaultTextSearchMatch
-} from '@bridge-contract/ipc'
-import { DEFAULT_VAULT_SETTINGS } from '@bridge-contract/ipc'
-import type { CustomTemplateFile, WriteTemplateInput } from '@bridge-contract/templates'
-import type { VaultTask } from '@shared/tasks'
-import { parseTaskFile, parseTasksFromBody } from '@shared/tasks'
-import { normalizeHarperVaultState } from '@shared/harper-settings'
-import { normalizeNoteComments } from '@shared/note-comments'
-import { isFormDirName, isDatabaseInternalPath } from '@shared/databases'
-import { emptyExcalidrawDocument } from '@shared/excalidraw'
-import { DEMO_TOUR_ASSETS, DEMO_TOUR_NOTES } from '@desktop-main/demo-tour-data'
+} from '@zennotes/bridge-contract/ipc'
+import { DEFAULT_VAULT_SETTINGS } from '@zennotes/bridge-contract/ipc'
+import type { CustomTemplateFile, WriteTemplateInput } from '@zennotes/bridge-contract/templates'
+import type { VaultTask } from '@zennotes/shared-domain/tasks'
+import { parseTaskFile, parseTasksFromBody } from '@zennotes/shared-domain/tasks'
+import { normalizeHarperVaultState } from '@zennotes/shared-domain/harper-settings'
+import { normalizeNoteComments } from '@zennotes/shared-domain/note-comments'
+import { isFormDirName, isDatabaseInternalPath } from '@zennotes/shared-domain/databases'
+import { emptyExcalidrawDocument } from '@zennotes/shared-domain/excalidraw'
+import { DEMO_TOUR_ASSETS, DEMO_TOUR_NOTES } from '@zennotes/shared-domain/demo-tour-data'
 import { WELCOME_NOTE_PATH, WELCOME_NOTE_BODY } from './welcome-note'
 import {
   rewriteWikilinksForRename,
   type RenameNoteRef
-} from '@desktop-main/wikilink-rename'
+} from '@zennotes/shared-domain/wikilink-rename'
 import { NativeFs } from './native-fs'
 import { ensureDownloaded } from './icloud'
 import { emitVaultChange } from './events'
@@ -76,7 +77,7 @@ import {
   normalizeSystemFolderPaths,
   resolveFolderPath,
   type SystemFolderPaths
-} from '@shared/system-folder-paths'
+} from '@zennotes/shared-domain/system-folder-paths'
 
 const META_CACHE_FILE = `${INTERNAL_VAULT_DIR}/mobile-note-meta-cache-v1.json`
 /** Restore metadata written next to each deleted asset (desktop parity). */
@@ -672,6 +673,37 @@ export class MobileVault {
     return await this.metaForPath(rel)
   }
 
+  private relocationIO(): VaultRelocationIO {
+    return {
+      stat: path => this.fs.statVerified(path),
+      mkdir: path => this.fs.mkdir(path),
+      rename: (from, to) => this.fs.rename(from, to)
+    }
+  }
+
+  private async relocateNote(oldPath: string, newPath: string): Promise<void> {
+    await relocateVaultEntries(this.relocationIO(), [
+      { from: oldPath, to: newPath, required: true },
+      { from: this.commentsPathFor(oldPath), to: this.commentsPathFor(newPath) }
+    ])
+    this.invalidateMeta(oldPath)
+  }
+
+  /** Detach both trees before cleanup so a failed move can restore the original. */
+  private async detachContent(path: string, comments: string, required = true): Promise<void> {
+    const temporary = `${INTERNAL_VAULT_DIR}/delete-${uuid()}`
+    const moves: VaultRelocation[] = [
+      { from: path, to: `${temporary}/content`, required },
+      { from: comments, to: `${temporary}/comments` }
+    ]
+    await relocateVaultEntries(this.relocationIO(), moves)
+    try {
+      if (await this.fs.statVerified(temporary) !== null) await this.fs.rmdir(temporary)
+    } catch (error) {
+      console.warn('Detached deleted content retained for cleanup', temporary, error)
+    }
+  }
+
   async renameNote(relPath: string, nextTitle: string): Promise<NoteMeta> {
     const rel = resolveSafeRel(relPath)
     const folder = await this.folderOf(rel)
@@ -686,9 +718,7 @@ export class MobileVault {
     }
     // Snapshot for inbound wikilink rewriting before the rename lands.
     const preNotes = await this.listNotes()
-    await this.fs.rename(rel, target)
-    this.invalidateMeta(rel)
-    await this.moveNoteComments(rel, target)
+    await this.relocateNote(rel, target)
     emitVaultChange({ kind: 'unlink', path: rel, folder, scope: 'content' })
     emitVaultChange({ kind: 'add', path: target, folder, scope: 'content' })
     await this.updateInboundWikilinks(preNotes, rel, trimmed)
@@ -753,9 +783,7 @@ export class MobileVault {
     const baseTitle = stemName(filename)
     const finalTitle = await this.uniqueTitle(destDir, baseTitle, ext)
     const destRel = joinPath(destDir, `${finalTitle}${ext}`)
-    await this.fs.rename(rel, destRel)
-    this.invalidateMeta(rel)
-    await this.moveNoteComments(rel, destRel)
+    await this.relocateNote(rel, destRel)
     emitVaultChange({ kind: 'unlink', path: rel, folder: sourceFolder, scope: 'content' })
     emitVaultChange({ kind: 'add', path: destRel, folder: target, scope: 'content' })
     return await this.metaForPath(destRel)
@@ -776,25 +804,17 @@ export class MobileVault {
 
   async emptyTrash(): Promise<void> {
     const trashDir = await this.folderRootRel('trash')
-    const entries = await this.fs.readdir(trashDir)
-    for (const entry of entries) {
-      const rel = `${trashDir}/${entry.name}`
-      await this.removeNoteComments(rel)
-      if (entry.type === 'directory') {
-        await this.fs.rmdir(rel).catch(() => {})
-      } else {
-        await this.fs.deleteFile(rel).catch(() => {})
-      }
-      this.invalidateMeta(rel)
-      emitVaultChange({ kind: 'unlink', path: rel, folder: 'trash', scope: 'content' })
+    await this.detachContent(trashDir, `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${trashDir}`, false)
+    for (const key of [...this.metaCache.keys()]) {
+      if (key.startsWith(`${trashDir}/`)) this.invalidateMeta(key)
     }
+    emitVaultChange({ kind: 'unlink', path: trashDir, folder: 'trash', scope: 'folder' })
   }
 
   async deleteNote(relPath: string): Promise<void> {
     const rel = resolveSafeRel(relPath)
     const folder = (await this.folderOf(rel)) ?? 'trash'
-    await this.fs.deleteFile(rel)
-    await this.removeNoteComments(rel)
+    await this.detachContent(rel, this.commentsPathFor(rel))
     this.invalidateMeta(rel)
     emitVaultChange({ kind: 'unlink', path: rel, folder, scope: 'content' })
   }
@@ -835,9 +855,7 @@ export class MobileVault {
       `${await this.uniqueTitle(destDir, baseTitle, ext || '.md')}${ext || '.md'}`
     )
     if (destRel === rel) return await this.metaForPath(rel)
-    await this.fs.rename(rel, destRel)
-    this.invalidateMeta(rel)
-    await this.moveNoteComments(rel, destRel)
+    await this.relocateNote(rel, destRel)
     emitVaultChange({ kind: 'unlink', path: rel, folder: sourceFolder, scope: 'content' })
     emitVaultChange({ kind: 'add', path: destRel, folder: targetFolder, scope: 'content' })
     return await this.metaForPath(destRel)
@@ -871,7 +889,6 @@ export class MobileVault {
     }
     const parent = dirName(newRel)
     if (parent) await this.fs.mkdir(parent)
-    await this.fs.rename(oldRel, newRel)
     // Re-key folder icons/colors + drop stale meta cache entries under the old path.
     const settings = await this.getVaultSettings()
     const rekey = (map: Record<string, string>): Record<string, string> => {
@@ -885,10 +902,30 @@ export class MobileVault {
       }
       return out
     }
-    await this.setVaultSettings({
+    const settingsPath = `${INTERNAL_VAULT_DIR}/vault.json`
+    const hadSettings = await this.fs.statVerified(settingsPath) !== null
+    const originalSettings = hadSettings ? await this.fs.readText(settingsPath) : null
+    await relocateVaultEntries(this.relocationIO(), [
+      { from: oldRel, to: newRel, required: true },
+      { from: `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${oldRel}`,
+        to: `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${newRel}` }
+    ], async () => {
+      try {
+      await this.setVaultSettings({
       ...settings,
       folderIcons: rekey(settings.folderIcons as Record<string, string>) as VaultSettings['folderIcons'],
       folderColors: rekey(settings.folderColors as Record<string, string>) as VaultSettings['folderColors']
+      })
+      } catch (error) {
+        try {
+          if (originalSettings !== null) await this.fs.writeText(settingsPath, originalSettings)
+          else if (await this.fs.statVerified(settingsPath) !== null) await this.fs.deleteFile(settingsPath)
+          this.settingsCache = settings
+        } catch (rollback) {
+          throw new AggregateError([error, rollback], 'FOLDER_STATE_UNCERTAIN: Could not restore vault settings')
+        }
+        throw error
+      }
     })
     for (const key of [...this.metaCache.keys()]) {
       if (key.startsWith(`${oldRel}/`)) this.invalidateMeta(key)
@@ -903,7 +940,7 @@ export class MobileVault {
     const clean = subpath.replace(/^\/+|\/+$/g, '')
     if (!clean) return
     const rel = resolveSafeRel(joinPath(topRel, clean))
-    await this.fs.rmdir(rel)
+    await this.detachContent(rel, `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${rel}`)
     for (const key of [...this.metaCache.keys()]) {
       if (key.startsWith(`${rel}/`)) this.invalidateMeta(key)
     }
@@ -972,24 +1009,6 @@ export class MobileVault {
       scope: 'comments'
     })
     return comments
-  }
-
-  private async moveNoteComments(oldRel: string, newRel: string): Promise<void> {
-    const oldPath = this.commentsPathFor(oldRel)
-    const raw = await this.fs.readTextOrNull(oldPath)
-    if (raw === null) return
-    try {
-      const parsed = JSON.parse(raw) as { comments?: NoteComment[] }
-      const comments = (parsed.comments ?? []).map((c) => ({ ...c, notePath: newRel }))
-      await this.writeCommentsFile(newRel, comments)
-    } catch {
-      // unreadable sidecar — drop it
-    }
-    await this.fs.deleteFile(oldPath).catch(() => {})
-  }
-
-  private async removeNoteComments(rel: string): Promise<void> {
-    await this.fs.deleteFile(this.commentsPathFor(rel)).catch(() => {})
   }
 
   // -------------------------------------------------------------------

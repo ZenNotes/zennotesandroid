@@ -21,3 +21,5 @@ docs/releases/*
 # Signing (local only — never commit)
 android/upload-keystore.jks
 android/keystore.properties
+
+/dist-boundary-check/

@@ -50,7 +50,12 @@ export default defineConfig({
       allow: [ROOT]
     }
   },
-  plugins: [...zenNotesAssets({ harper: false }), react()],
+  // harper: phones use the system keyboard for spelling; the core never loads it here.
+  // excalidraw: the core helper would copy Excalidraw's whole font pack (234 files,
+  // ~13 MB, 12 MB of it the Xiaolai CJK handwriting subsets) into the APK. 1.1.20
+  // shipped without it and drawings resolved fonts as they always have, so keep
+  // the download at ~31 MB instead of ~44 MB.
+  plugins: [...zenNotesAssets({ harper: false, excalidraw: false }), react()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,

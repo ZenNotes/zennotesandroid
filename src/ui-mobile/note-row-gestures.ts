@@ -34,7 +34,9 @@
  * row unmounting takes the layers with it.
  */
 import { Haptics, ImpactStyle } from '@capacitor/haptics'
-import { useStore } from '@zennotes/app-core/store'
+import { captureMobileWorkspace } from './workspace-context'
+import type { NoteActionHost } from '@zennotes/app-core/notes'
+import { getShellSnapshot } from '@zennotes/app-core/shell'
 import {
   archiveNote,
   deleteNoteForever,
@@ -82,7 +84,7 @@ interface RowAction {
   label: string
   icon: keyof typeof ICONS
   danger?: boolean
-  run: (path: string, title: string) => void
+  run: (path: string, title: string, host: NoteActionHost) => void
 }
 
 interface RowKind {
@@ -99,20 +101,20 @@ interface RowKind {
 }
 
 const NOTE_ACTIONS: RowAction[] = [
-  { label: 'Archive', icon: 'archive', run: (path) => archiveNote(path) },
-  { label: 'Delete', icon: 'trash', danger: true, run: (path, title) => trashNote(path, title) }
+  { label: 'Archive', icon: 'archive', run: (path, _title, host) => archiveNote(path, host) },
+  { label: 'Delete', icon: 'trash', danger: true, run: (path, title, host) => trashNote(path, title, host) }
 ]
 const ARCHIVED_ACTIONS: RowAction[] = [
-  { label: 'Restore', icon: 'restore', run: (path) => restoreNote(path, 'archived') },
-  { label: 'Delete', icon: 'trash', danger: true, run: (path, title) => trashNote(path, title) }
+  { label: 'Restore', icon: 'restore', run: (path, _title, host) => restoreNote(path, 'archived', host) },
+  { label: 'Delete', icon: 'trash', danger: true, run: (path, title, host) => trashNote(path, title, host) }
 ]
 const TRASHED_ACTIONS: RowAction[] = [
-  { label: 'Restore', icon: 'restore', run: (path) => restoreNote(path, 'trashed') },
+  { label: 'Restore', icon: 'restore', run: (path, _title, host) => restoreNote(path, 'trashed', host) },
   {
     label: 'Delete',
     icon: 'trash',
     danger: true,
-    run: (path, title) => deleteNoteForever(path, title)
+    run: (path, title, host) => deleteNoteForever(path, title, host)
   }
 ]
 
@@ -138,8 +140,7 @@ function homeRecentPath(row: HTMLElement): string | null {
   if (!list || list.tagName !== 'UL') return null
   const index = Array.prototype.indexOf.call(list.children, li)
   if (index < 0) return null
-  const recent = useStore
-    .getState()
+  const recent = getShellSnapshot()
     .notes.filter((n) => n.folder !== 'trash' && n.folder !== 'archive')
     .slice()
     .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -205,6 +206,7 @@ interface Hit {
   row: HTMLElement
   frame: HTMLElement
   path: string
+  host: NoteActionHost
 }
 
 function hitTest(target: EventTarget | null): Hit | null {
@@ -214,13 +216,13 @@ function hitTest(target: EventTarget | null): Hit | null {
     if (!(row instanceof HTMLElement)) continue
     const path = kind.path(row)
     if (!path) return null
-    return { kind, row, frame: kind.frame(row), path }
+    return { kind, row, frame: kind.frame(row), path, host: captureMobileWorkspace() }
   }
   return null
 }
 
 function titleOf(path: string, row: HTMLElement): string {
-  const note = useStore.getState().notes.find((n) => n.path === path)
+  const note = getShellSnapshot().notes.find((n) => n.path === path)
   return note?.title || row.textContent?.trim() || path
 }
 
@@ -264,7 +266,7 @@ function actionsLayer(hit: Hit): HTMLElement {
       e.preventDefault()
       e.stopPropagation()
       settle(hit, 0)
-      action.run(hit.path, titleOf(hit.path, hit.row))
+      action.run(hit.path, titleOf(hit.path, hit.row), hit.host)
     })
     layer.appendChild(button)
   }
@@ -369,12 +371,12 @@ function cancelLongPress(t: Track): void {
 function fireLongPress(t: Track): void {
   t.timer = null
   t.dead = true
-  if (!t.hit.row.isConnected) return
+  if (!t.hit.row.isConnected || !t.hit.host.isCurrent()) return
   void Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {})
   // The finger lift emits a click; swallow it or the note opens under the sheet.
   suppressClicksUntil = Date.now() + CLICK_SUPPRESS_MS
   if (openFrame) settle(openFrame.hit, 0)
-  openNoteMenu({ path: t.hit.path, title: titleOf(t.hit.path, t.hit.row), kind: t.hit.kind.kind })
+  openNoteMenu({ path: t.hit.path, title: titleOf(t.hit.path, t.hit.row), kind: t.hit.kind.kind }, t.hit.host)
 }
 
 function onTouchStart(e: TouchEvent): void {
@@ -462,6 +464,7 @@ function onTouchEnd(): void {
   if (!t) return
   cancelLongPress(t)
   if (t.dead || !t.claimed) return
+  if (!t.hit.host.isCurrent()) { settle(t.hit, 0); return }
   const width = t.hit.kind.actions.length * ACTION_WIDTH
   if (t.hit.kind.pinnable && live > PIN_TRIGGER) {
     pinNote(t.hit.path)

@@ -2,95 +2,16 @@
  * The mobile editing toolbar (spec 06's marquee input feature): a horizontally
  * scrollable formatting row docked above the soft keyboard while the
  * CodeMirror editor is focused. Actions drive the shared editor through the
- * store's `editorViewRef` using app-core's own formatting helpers
- * (lib/cm-format.ts) plus stock @codemirror/commands — no editor logic is
- * duplicated, and no zennotes code changes.
+ * public semantic commands, without owning editor state or formatting logic.
  *
  * With the Capacitor Keyboard in `resize: native` mode the viewport shrinks
  * when the keyboard shows, so `bottom: 0` docks exactly on the keyboard's top.
  */
 import React, { useEffect, useState } from 'react'
 import { Keyboard } from '@capacitor/keyboard'
-import type { EditorView } from '@codemirror/view'
-import { indentLess, indentMore, redo, undo } from '@codemirror/commands'
-import { openSearchPanel } from '@codemirror/search'
-import { EditorSelection } from '@codemirror/state'
-import { useStore } from '@zennotes/app-core/store'
-import {
-  setBlockType,
-  toggleWrap,
-  wrapLink,
-  type BlockType
-} from '@zennotes/app-core/lib/cm-format'
+import { runEditorCommand } from '@zennotes/app-core/editor'
 import { promptAttachFiles } from './attach'
 import { revealCaretAboveKeyboardSoon } from './editor-keyboard-scroll'
-
-function view(): EditorView | null {
-  return useStore.getState().editorViewRef
-}
-
-function withView(fn: (v: EditorView) => void): void {
-  const v = view()
-  if (!v) return
-  fn(v)
-  v.focus()
-}
-
-/** Insert text at the cursor, placing the caret `caretOffset` chars in. */
-function insertSnippet(v: EditorView, text: string, caretOffset: number): void {
-  const { from, to } = v.state.selection.main
-  v.dispatch({
-    changes: { from, to, insert: text },
-    selection: EditorSelection.cursor(from + caretOffset)
-  })
-}
-
-/**
- * Markers app-core's blockPrefix would put on these block types. app-core's
- * setBlockType converts existing lines and deliberately skips blank ones, so
- * on a fresh line Bullet / Checkbox / Heading did nothing until something was
- * typed (Adib, iPhone device testing 2026-09-08; same code here). Desktop
- * users just type the marker; on the phone the button IS the way to start a
- * list.
- */
-const BLANK_LINE_MARKERS: Partial<Record<BlockType, string>> = {
-  bullet: '- ',
-  todo: '- [ ] ',
-  h1: '# ',
-  h2: '## ',
-  h3: '### '
-}
-
-/**
- * setBlockType, plus the blank-line case it skips: a collapsed cursor on an
- * empty (or whitespace-only) line gets the marker inserted after the existing
- * indentation, caret after the marker. Selections and non-blank lines go
- * through setBlockType unchanged.
- */
-function applyBlockType(v: EditorView, type: BlockType): void {
-  const { from, to } = v.state.selection.main
-  const line = v.state.doc.lineAt(from)
-  const marker = BLANK_LINE_MARKERS[type]
-  if (marker !== undefined && from === to && line.text.trim() === '') {
-    // line.text is whitespace-only here, so it doubles as the indent.
-    const insert = line.text + marker
-    v.dispatch({
-      changes: { from: line.from, to: line.to, insert },
-      selection: EditorSelection.cursor(line.from + insert.length)
-    })
-    return
-  }
-  setBlockType(v, type)
-}
-
-/** Cycle the current line's heading level: none → # → ## → ### → none. */
-function cycleHeading(v: EditorView): void {
-  const line = v.state.doc.lineAt(v.state.selection.main.from)
-  const m = line.text.match(/^(#{1,6})\s/)
-  const level = m ? m[1]!.length : 0
-  const next = level >= 3 ? 'paragraph' : (['h1', 'h2', 'h3'] as const)[level]!
-  applyBlockType(v, next)
-}
 
 interface ToolButton {
   key: string
@@ -106,13 +27,13 @@ const BUTTONS: ToolButton[] = [
     key: 'undo',
     label: 'Undo',
     d: 'M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 015.5 5.5v0a5.5 5.5 0 01-5.5 5.5H11',
-    run: () => withView((v) => undo(v))
+    run: () => runEditorCommand('undo')
   },
   {
     key: 'redo',
     label: 'Redo',
     d: 'M15 14l5-5-5-5M20 9H9.5A5.5 5.5 0 004 14.5v0A5.5 5.5 0 009.5 20H13',
-    run: () => withView((v) => redo(v))
+    run: () => runEditorCommand('redo')
   },
   {
     key: 'find',
@@ -122,10 +43,7 @@ const BUTTONS: ToolButton[] = [
     // withView's editor refocus would immediately steal it back. Focus moves
     // input-to-input, so the keyboard stays up (Discord feedback, 2026-08-20:
     // "I have to exit the note to search for a word").
-    run: () => {
-      const v = view()
-      if (v) openSearchPanel(v)
-    }
+    run: () => { runEditorCommand('open-search') }
   },
   {
     key: 'attach',
@@ -139,84 +57,84 @@ const BUTTONS: ToolButton[] = [
     key: 'todo',
     label: 'Checkbox',
     d: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11',
-    run: () => withView((v) => applyBlockType(v, 'todo'))
+    run: () => runEditorCommand('set-task-list')
   },
   {
     key: 'bullet',
     label: 'Bullet list',
     d: 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01',
-    run: () => withView((v) => applyBlockType(v, 'bullet'))
+    run: () => runEditorCommand('set-bullet-list')
   },
   {
     key: 'heading',
     label: 'Heading',
     glyph: 'H',
     d: '',
-    run: () => withView((v) => cycleHeading(v))
+    run: () => runEditorCommand('cycle-heading')
   },
   {
     key: 'bold',
     label: 'Bold',
     glyph: 'B',
     d: '',
-    run: () => withView((v) => toggleWrap(v, '**'))
+    run: () => runEditorCommand('toggle-bold')
   },
   {
     key: 'italic',
     label: 'Italic',
     glyph: 'I',
     d: '',
-    run: () => withView((v) => toggleWrap(v, '*'))
+    run: () => runEditorCommand('toggle-italic')
   },
   {
     key: 'strike',
     label: 'Strikethrough',
     d: 'M16 4H9a3 3 0 00-2.83 4M14 12a4 4 0 010 8H6M4 12h16',
-    run: () => withView((v) => toggleWrap(v, '~~'))
+    run: () => runEditorCommand('toggle-strikethrough')
   },
   {
     key: 'highlight',
     label: 'Highlight',
     d: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z',
-    run: () => withView((v) => toggleWrap(v, '=='))
+    run: () => runEditorCommand('toggle-highlight')
   },
   {
     key: 'code',
     label: 'Inline code',
     d: 'M16 18l6-6-6-6M8 6l-6 6 6 6',
-    run: () => withView((v) => toggleWrap(v, '`'))
+    run: () => runEditorCommand('toggle-inline-code')
   },
   {
     key: 'link',
     label: 'Link',
     d: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71',
-    run: () => withView((v) => wrapLink(v))
+    run: () => runEditorCommand('insert-link')
   },
   {
     key: 'wikilink',
     label: 'Wikilink',
     glyph: '[[',
     d: '',
-    run: () => withView((v) => insertSnippet(v, '[[]]', 2))
+    run: () => runEditorCommand('insert-wikilink')
   },
   {
     key: 'tag',
     label: 'Tag',
     glyph: '#',
     d: '',
-    run: () => withView((v) => insertSnippet(v, '#', 1))
+    run: () => runEditorCommand('insert-tag')
   },
   {
     key: 'outdent',
     label: 'Outdent',
     d: 'M11 8h10M11 12h10M11 16h10M7 8l-4 4 4 4',
-    run: () => withView((v) => indentLess(v))
+    run: () => runEditorCommand('outdent')
   },
   {
     key: 'indent',
     label: 'Indent',
     d: 'M11 8h10M11 12h10M11 16h10M3 8l4 4-4 4',
-    run: () => withView((v) => indentMore(v))
+    run: () => runEditorCommand('indent')
   }
 ]
 

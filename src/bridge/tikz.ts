@@ -16,7 +16,7 @@
  * per-source caching, and a serialized render queue (the TeX engine does not
  * tolerate concurrent runs).
  */
-import type { TikzRenderResponse } from '@shared/ipc'
+import type { TikzRenderResponse } from '@zennotes/shared-domain/ipc'
 
 const ASSET_BASE = 'tikzjax/'
 // Generous: the first render on a cold device includes engine load + wasm

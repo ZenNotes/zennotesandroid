@@ -93,7 +93,8 @@ public class SafFsPlugin extends Plugin {
             },
             null, null, null
         )) {
-            if (c != null) {
+            if (c == null) throw new IllegalStateException("Document provider did not return a directory listing");
+            {
                 while (c.moveToNext()) {
                     String id = c.getString(0);
                     String name = c.getString(1);
@@ -249,7 +250,14 @@ public class SafFsPlugin extends Plugin {
         try {
             String rel = clean(call.getString("path"));
             Entry e = resolve(tree, rel);
-            if (e == null || e.isDir) throw new FileNotFoundException(rel);
+            if (e == null) {
+                call.reject("File does not exist: " + rel, "ZN-SAF-NOT-FOUND");
+                return;
+            }
+            if (e.isDir) {
+                call.reject("Cannot read a directory: " + rel, "ZN-SAF-IS-DIRECTORY");
+                return;
+            }
             JSObject ret = new JSObject();
             ret.put("data", new String(readAll(docUri(tree, e.docId)), StandardCharsets.UTF_8));
             call.resolve(ret);
@@ -265,7 +273,14 @@ public class SafFsPlugin extends Plugin {
         try {
             String rel = clean(call.getString("path"));
             Entry e = resolve(tree, rel);
-            if (e == null || e.isDir) throw new FileNotFoundException(rel);
+            if (e == null) {
+                call.reject("File does not exist: " + rel, "ZN-SAF-NOT-FOUND");
+                return;
+            }
+            if (e.isDir) {
+                call.reject("Cannot read a directory: " + rel, "ZN-SAF-IS-DIRECTORY");
+                return;
+            }
             JSObject ret = new JSObject();
             ret.put("data", Base64.encodeToString(readAll(docUri(tree, e.docId)), Base64.NO_WRAP));
             call.resolve(ret);
@@ -385,8 +400,21 @@ public class SafFsPlugin extends Plugin {
                 String movedId = DocumentsContract.getDocumentId(moved);
                 String targetName = baseName(to);
                 if (!baseName(from).equals(targetName)) {
-                    if (DocumentsContract.renameDocument(resolver(), docUri(tree, movedId), targetName) == null) {
-                        throw new Exception("Rename after move refused");
+                    try {
+                        if (DocumentsContract.renameDocument(resolver(), docUri(tree, movedId), targetName) == null) {
+                            throw new Exception("Rename after move refused");
+                        }
+                    } catch (Exception renameError) {
+                        // A rename promise must not reject after silently changing parents.
+                        try {
+                            Uri restored = DocumentsContract.moveDocument(resolver(), docUri(tree, movedId),
+                                docUri(tree, toParentId), docUri(tree, fromParent.docId));
+                            if (restored == null) throw new Exception("Rollback move refused");
+                        } catch (Exception rollbackError) {
+                            throw new Exception("FOLDER_STATE_UNCERTAIN: Rename failed and could not be restored: "
+                                + rollbackError.getMessage(), renameError);
+                        }
+                        throw renameError;
                     }
                 }
             }
@@ -395,6 +423,7 @@ public class SafFsPlugin extends Plugin {
             if (src.isDir) listings.remove(cacheKey(tree, src.docId));
             call.resolve();
         } catch (Exception e) {
+            listings.clear();
             call.reject("rename failed: " + e.getMessage());
         }
     }

@@ -15,7 +15,7 @@ import type {
   RemoteWorkspaceProfileInput,
   ServerCapabilities,
   VaultInfo
-} from '@shared/ipc'
+} from '@zennotes/shared-domain/ipc'
 import { RemoteClient, normalizeBaseUrl } from './remote-client'
 import { RemoteVault } from './remote-vault'
 

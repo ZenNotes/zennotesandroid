@@ -28,12 +28,12 @@ import type {
   VaultInfo,
   VaultSettings,
   VaultTextSearchMatch
-} from '@shared/ipc'
-import type { VaultTask } from '@shared/tasks'
-import type { CustomTemplateFile, WriteTemplateInput } from '@bridge-contract/templates'
-import type { ImportedAsset } from '@shared/ipc'
-import { createAbsenceAwareReader } from '@shared/remote-absence'
-import { pastedImageFilename } from '@shared/pasted-image'
+} from '@zennotes/shared-domain/ipc'
+import type { VaultTask } from '@zennotes/shared-domain/tasks'
+import type { CustomTemplateFile, WriteTemplateInput } from '@zennotes/bridge-contract/templates'
+import type { ImportedAsset } from '@zennotes/shared-domain/ipc'
+import { createAbsenceAwareReader } from '@zennotes/shared-domain/remote-absence'
+import { pastedImageFilename } from '@zennotes/shared-domain/pasted-image'
 import { emitVaultChange } from './events'
 import { importedAssetFilename } from './imported-assets'
 import { RemoteClient, RemoteRequestError } from './remote-client'

@@ -23,7 +23,11 @@
  */
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
-import { useStore } from '@zennotes/app-core/store'
+import { getShellSnapshot, subscribeShell, type ShellSnapshot } from '@zennotes/app-core/shell'
+import { openNote, openAppPage } from '@zennotes/app-core/navigation'
+import { getTasksSnapshot, refreshTasks, openTask } from '@zennotes/app-core/tasks'
+import { runAppCommand } from '@zennotes/app-core/commands'
+import { captureMobileWorkspace } from './workspace-context'
 import { isMobileNoteIndexReady } from '../bridge/mobile-bridge'
 import { ZenWidgets } from '../bridge/widgets'
 import { setDrawerOpen } from './drawer-state'
@@ -39,7 +43,7 @@ const LANDING_SETTLE_MS = 80
  *  and its own guards decide. */
 const READY_TIMEOUT_MS = 20000
 
-type StoreState = ReturnType<typeof useStore.getState>
+type StoreState = ShellSnapshot
 
 let lastUrl = ''
 let lastAt = 0
@@ -85,7 +89,7 @@ export function handleDeepLink(raw: string): void {
 }
 
 function isReady(): boolean {
-  const s = useStore.getState()
+  const s = getShellSnapshot()
   return Boolean(s.vault) && s.workspaceRestored && isMobileNoteIndexReady()
 }
 
@@ -98,7 +102,7 @@ function whenReady(cb: () => void): void {
     window.clearTimeout(deadline)
     window.setTimeout(cb, LANDING_SETTLE_MS)
   }
-  const unsub = useStore.subscribe(() => {
+  const unsub = subscribeShell(() => {
     if (isReady()) finish()
   })
   const deadline = window.setTimeout(finish, READY_TIMEOUT_MS)
@@ -113,21 +117,21 @@ async function run(link: WidgetLink): Promise<void> {
   closeMobileSheet()
   closeNoteMenu()
   setDrawerOpen(false)
-  const s = useStore.getState()
+  const s = getShellSnapshot()
   switch (link.kind) {
     case 'new':
       // The ⊕ sheet's "New note" (commands.ts `note.new.inbox`).
-      await s.createAndOpen('inbox', '', { focusTitle: true })
+      await runAppCommand('note.new.inbox')
       return
     case 'open':
-      if (hasNote(s, link.path)) await s.selectNote(link.path)
+      if (hasNote(s, link.path)) await openNote(link.path)
       else goHome()
       return
     case 'task':
-      await openTask(s, link)
+      await openLinkedTask(s, link)
       return
     case 'tasks':
-      await s.openTasksView()
+      await openAppPage('tasks')
       return
     case 'home':
       goHome()
@@ -135,17 +139,10 @@ async function run(link: WidgetLink): Promise<void> {
   }
 }
 
-async function openTask(s: StoreState, link: Extract<WidgetLink, { kind: 'task' }>): Promise<void> {
-  if (!hasNote(s, link.path)) {
-    goHome()
-    return
-  }
-  let task = s.vaultTasks.find((t) => t.id === link.id)
-  if (!task) {
-    // The cache is lazy on the phone; one per-note scan is enough to find it.
-    await s.rescanTasksForPath(link.path)
-    task = useStore.getState().vaultTasks.find((t) => t.id === link.id)
-  }
-  if (task) await useStore.getState().openTaskAt(task)
-  else await useStore.getState().selectNote(link.path)
+async function openLinkedTask(s: StoreState, link: Extract<WidgetLink, { kind: 'task' }>): Promise<void> {
+  if (!hasNote(s, link.path)) { goHome(); return }
+  const host = captureMobileWorkspace()
+  if (!getTasksSnapshot().tasks.some(task => task.id === link.id)) await refreshTasks(link.path)
+  if (!host.isCurrent()) return
+  if (!await openTask(link.id) && host.isCurrent()) await openNote(link.path)
 }

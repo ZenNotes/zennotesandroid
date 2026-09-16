@@ -22,7 +22,7 @@
  * conflict is resolved; the common shapes (fresh device joining a desktop
  * root vault, or two default vaults) reconcile exactly.
  */
-import { resolveFolderPath, type SystemFolderPaths } from '@shared/system-folder-paths'
+import { resolveFolderPath, type SystemFolderPaths } from '@zennotes/shared-domain/system-folder-paths'
 import { authenticatedClient } from './mobile-cloud-auth'
 import { emitVaultChange } from './events'
 import {

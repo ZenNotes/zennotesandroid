@@ -58,6 +58,23 @@ const persistence: CloudSyncHostPersistence = {
   },
   async saveState(vaultKey: string, baseUrl: string, state: CloudSyncState): Promise<void> {
     await writeJson(await statePath(vaultKey, baseUrl, state.vault_id), state)
+  },
+  async retireState(vaultKey: string, baseUrl: string, vaultId: string): Promise<void> {
+    const path = await statePath(vaultKey, baseUrl, vaultId)
+    let data: string
+    try {
+      const result = await Filesystem.readFile({ path, directory: Directory.Data, encoding: Encoding.UTF8 })
+      data = typeof result.data === 'string' ? result.data : await result.data.text()
+    } catch (error) {
+      if (isNotFoundError(error)) return
+      throw error
+    }
+    // Preserve the complete state, including unsent conflict drafts, before unlinking.
+    await Filesystem.writeFile({
+      path: path.replace('/states/', '/retired-states/').replace(/\.json$/, `.${crypto.randomUUID()}.json`),
+      directory: Directory.Data, encoding: Encoding.UTF8, data, recursive: true
+    })
+    await deleteDataFile(path)
   }
 }
 
@@ -105,17 +122,7 @@ export async function deleteMobileCloudVault(vault: MobileVault): Promise<void> 
 
 /** Check the server cursor without scanning the vault or downloading attachment bytes. */
 export async function hasMobileCloudVaultChanges(vault: MobileVault): Promise<boolean> {
-  const link = await getMobileCloudVaultLink(vault)
-  if (!link) return false
-  const status = await getMobileCloudAccountStatus()
-  if (status.state !== 'connected' || status.account?.base_url !== link.base_url) return false
-  const value = await persistence.loadState(vault.fs.rootPath, link.base_url, link.vault_id)
-  const state = value as Partial<CloudSyncState> | null
-  if (!state || state.version !== 1 || state.vault_id !== link.vault_id ||
-      typeof state.cursor !== 'number' || !Number.isInteger(state.cursor) || state.cursor < 0) return true
-  const client = await authenticatedClient()
-  const manifest = await client.manifest(link.vault_id, { includeContent: false, perPage: 1 })
-  return manifest.cursor !== state.cursor
+  return service.hasRemoteChanges(hostVault(vault))
 }
 
 export async function syncMobileCloudVault(vault: MobileVault): Promise<CloudSyncRunSummary> {
@@ -371,7 +378,11 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 async function deleteDataFile(path: string): Promise<void> {
-  await Filesystem.deleteFile({ path, directory: Directory.Data }).catch(() => {})
+  try {
+    await Filesystem.deleteFile({ path, directory: Directory.Data })
+  } catch (error) {
+    if (!isNotFoundError(error)) throw error
+  }
 }
 
 async function fingerprint(value: string): Promise<string> {

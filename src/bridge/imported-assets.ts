@@ -7,7 +7,7 @@
  * where a test can reach them. The vault core re-exports them so existing
  * importers remain unaffected.
  */
-import type { ImportedAssetKind } from '@bridge-contract/ipc'
+import type { ImportedAssetKind } from '@zennotes/bridge-contract/ipc'
 
 export const ASSETS_DIR = 'assets'
 

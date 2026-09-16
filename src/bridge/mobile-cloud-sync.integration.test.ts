@@ -55,7 +55,7 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
     return item
   }
   const remote = {
-    listVaults: async () => ({ data: [{ id: 'vault-1', name: 'Test vault' }] }),
+    listVaults: async () => ({ data: [{ id: 'vault-1', name: 'Test vault' }, { id: 'vault-2', name: 'Other vault' }] }),
     manifest: async (_vaultId: string, options?: unknown) => {
       manifestRequests.push(options)
       return { data: [...remoteItems.values()], cursor, next_page: null }
@@ -175,7 +175,7 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
   await api.linkMobileCloudVault(vault, 'vault-1')
   const stateKey = () => [...persisted.keys()].find((path) => path.includes('/states/'))
   return {
-    api, vault, files, reads, uploaded, refreshes, remoteText, put, manifestRequests,
+    api, vault, files, reads, uploaded, refreshes, remoteText, put, manifestRequests, remote, persisted,
     setAccountStatus: (value: typeof accountStatus) => { accountStatus = value },
     sync: () => api.syncMobileCloudVault(vault),
     setFailWrite: (path: string | null) => { failWritePath = path },
@@ -339,5 +339,146 @@ describe('mobile Cloud adapter wiring', () => {
     assert.equal(details.local.text, 'Original')
     assert.equal(details.cloud.text, 'Cloud replacement')
     assert.deepEqual(h.reads, ['note.md'])
+  })
+})
+
+
+describe('deleted Cloud vault recovery (#791)', () => {
+  const serviceError = (status: number, code: string | null) => Object.assign(
+    new Error('ZenNotes Cloud request failed'), { name: 'CloudServiceRequestError', status, code }
+  )
+  const missing = () => serviceError(404, 'NOT_FOUND')
+
+  it('clears only the missing Cloud association and state while preserving local bytes and another link', async () => {
+    const h = await fixture({})
+    await h.sync()
+    const ownStateKey = [...h.persisted.keys()].find((path) => path.includes('/states/'))!
+    const otherVault = { ...h.vault, rootLabel: 'ZenNotes/Other', fs: { ...h.vault.fs, rootPath: 'ZenNotes/Other' } }
+    const otherLink = await h.api.linkMobileCloudVault(otherVault, 'vault-2')
+    await h.api.syncMobileCloudVault(otherVault)
+    const otherStateKey = [...h.persisted.keys()].find((path) => path.includes('/states/') && path !== ownStateKey)!
+    const otherState = h.persisted.get(otherStateKey)
+    const note = '---\ntitle: Keep me\n---\r\nUnsent local edit 📝\r\n'
+    h.put('note.md', note)
+    h.remote.changes = async () => { throw missing() }
+    h.remote.manifest = async () => { throw missing() }
+
+    await assert.rejects(h.sync())
+
+    assert.equal(await h.api.getMobileCloudVaultLink(h.vault), null)
+    assert.equal(h.persisted.has(ownStateKey), false)
+    assert.equal(h.files.get('note.md')?.bytes.toString(), note)
+    assert.deepEqual(await h.api.getMobileCloudVaultLink(otherVault), otherLink)
+    assert.equal(h.persisted.get(otherStateKey), otherState)
+  })
+
+  it('preserves complete conflict drafts in unique inactive state archives when a Cloud vault disappears', async () => {
+    const h = await fixture({ 'note.md': 'local version' })
+    h.remoteText('note.md', 'cloud version')
+    const savedChanges = h.remote.changes
+    const savedManifest = h.remote.manifest
+    const snapshots: string[] = []
+    const draft = 'Unsent merge draft\r\nKeep every byte 📝\r\n'
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      h.remote.changes = savedChanges
+      h.remote.manifest = savedManifest
+      if (attempt > 1) await h.api.linkMobileCloudVault(h.vault, 'vault-1')
+      const conflict = (await h.sync()).pending_conflicts[0]
+      assert.ok(conflict)
+      await h.api.saveMobileCloudConflictDraft(h.vault, conflict.id, `${draft}${attempt}`)
+      const stateKey = [...h.persisted.keys()].find((path) => path.includes('/states/'))!
+      snapshots.push(h.persisted.get(stateKey)!)
+      h.remote.changes = async () => { throw missing() }
+      h.remote.manifest = async () => { throw missing() }
+
+      await assert.rejects(h.sync())
+
+      assert.equal(h.persisted.has(stateKey), false)
+      assert.equal(await h.api.getMobileCloudVaultLink(h.vault), null)
+    }
+    const archived = [...h.persisted.entries()].filter(([path]) => !path.includes('/states/'))
+    for (const snapshot of snapshots) {
+      assert.equal(archived.filter(([, value]) => value === snapshot).length, 1)
+    }
+    assert.equal(h.files.get('note.md')?.bytes.toString(), 'local version')
+  })
+
+  it('retires the deleted link when a background metadata probe discovers it', async () => {
+    const h = await fixture({})
+    await h.sync()
+    h.remote.manifest = async () => { throw missing() }
+
+    await h.api.hasMobileCloudVaultChanges(h.vault).catch(() => undefined)
+
+    assert.equal(await h.api.getMobileCloudVaultLink(h.vault), null)
+    assert.equal(await h.api.hasMobileCloudVaultChanges(h.vault), false)
+  })
+
+  for (const [label, failure] of [
+    ['offline', new Error('Network unavailable')],
+    ['unauthenticated', serviceError(401, 'UNAUTHENTICATED')],
+    ['forbidden', serviceError(403, 'FORBIDDEN')],
+    ['server failure', serviceError(503, null)],
+    ['unstructured proxy 404', serviceError(404, null)]
+  ] as const) {
+    it(`preserves the link and cursor after ${label}`, async () => {
+      const h = await fixture({})
+      await h.sync()
+      const link = await h.api.getMobileCloudVaultLink(h.vault)
+      const state = structuredClone(h.state)
+      h.remote.changes = async () => { throw failure }
+      h.remote.manifest = async () => { throw failure }
+
+      await assert.rejects(h.sync())
+      await h.api.hasMobileCloudVaultChanges(h.vault).catch(() => undefined)
+
+      assert.deepEqual(await h.api.getMobileCloudVaultLink(h.vault), link)
+      assert.deepEqual(h.state, state)
+    })
+  }
+
+  it('retains the link when a missing mutation resource belongs to an existing vault', async () => {
+    const h = await fixture({})
+    await h.sync()
+    const link = await h.api.getMobileCloudVaultLink(h.vault)
+    h.put('note.md', 'Local note still exists')
+    h.remote.mutate = async () => { throw missing() }
+
+    await assert.rejects(h.sync())
+
+    assert.deepEqual(await h.api.getMobileCloudVaultLink(h.vault), link)
+    assert.equal(h.files.get('note.md')?.bytes.toString(), 'Local note still exists')
+  })
+
+  it('keeps the association when confirmation cannot reach an authenticated vault endpoint', async () => {
+    const h = await fixture({})
+    await h.sync()
+    const link = await h.api.getMobileCloudVaultLink(h.vault)
+    h.remote.changes = async () => { throw missing() }
+    h.remote.manifest = async () => { throw serviceError(401, 'UNAUTHENTICATED') }
+
+    await assert.rejects(h.sync())
+
+    assert.deepEqual(await h.api.getMobileCloudVaultLink(h.vault), link)
+  })
+
+  it('preserves a newer association when an older sync reports a deleted vault', async () => {
+    const h = await fixture({})
+    await h.sync()
+    let begin!: () => void
+    let fail!: (error: Error) => void
+    const started = new Promise<void>((resolve) => { begin = resolve })
+    h.remote.changes = async () => {
+      begin()
+      return await new Promise<never>((_resolve, reject) => { fail = reject })
+    }
+    h.remote.manifest = async () => { throw missing() }
+    const rejected = assert.rejects(h.sync())
+    await started
+    const replacement = await h.api.linkMobileCloudVault(h.vault, 'vault-2')
+    fail(missing())
+    await rejected
+
+    assert.deepEqual(await h.api.getMobileCloudVaultLink(h.vault), replacement)
   })
 })

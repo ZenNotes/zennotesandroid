@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   verify:
-    name: TypeScript, source pin, and Android build
+    name: TypeScript, package boundary, and Android build
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -36,13 +36,12 @@ jobs:
       - name: Install mobile dependencies
         run: npm ci
 
-      - name: Prepare exact ZenNotes source
-        run: npm run source:prepare
+      - name: Verify installed core packages
+        run: npm run boundaries:check
 
       - name: Reject high-severity production advisories
         run: |
           npm audit --omit=dev --audit-level=high
-          npm --prefix .zennotes-source audit --omit=dev --audit-level=high
 
       - name: Test and typecheck bridges
         run: |

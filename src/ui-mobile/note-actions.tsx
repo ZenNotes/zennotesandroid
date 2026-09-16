@@ -19,10 +19,10 @@
  */
 import React, { useSyncExternalStore } from 'react'
 import { Keyboard } from '@capacitor/keyboard'
-import { useStore } from '@zennotes/app-core/store'
-import { confirmApp } from '@zennotes/app-core/lib/confirm-requests'
-import { promptApp } from '@zennotes/app-core/lib/prompt-requests'
-import { buildMoveNotePrompt, parseMoveNoteTarget } from '@zennotes/app-core/lib/move-note'
+import { getShellSnapshot } from '@zennotes/app-core/shell'
+import { requestRenameNote, requestMoveNote, requestArchiveNote, requestTrashNote,
+  restoreNote as restoreCoreNote, requestDeleteNotePermanently, type NoteActionHost } from '@zennotes/app-core/notes'
+import { captureMobileWorkspace, reportActionError } from './workspace-context'
 import { getPinnedNotes, toggleNotePin, usePins } from './pins'
 import { SheetHandle } from './SheetHandle'
 
@@ -34,7 +34,7 @@ export interface NoteMenuTarget {
   kind: NoteRowKind
 }
 
-const s = (): ReturnType<typeof useStore.getState> => useStore.getState()
+const s = getShellSnapshot
 
 /** Pins are keyed by the vault root on Android (pins.ts, same as the drawer). */
 const vaultKey = (): string | null => s().vault?.root ?? null
@@ -43,15 +43,16 @@ const vaultKey = (): string | null => s().vault?.root ?? null
 // Sheet state (module-wide, like sheet-state.ts, so any surface can summon it)
 // ---------------------------------------------------------------------------
 
-let current: NoteMenuTarget | null = null
+let current: (NoteMenuTarget & { host: NoteActionHost }) | null = null
 const subscribers = new Set<() => void>()
 
 function notify(): void {
   for (const cb of subscribers) cb()
 }
 
-export function openNoteMenu(target: NoteMenuTarget): void {
-  current = target
+export function openNoteMenu(target: NoteMenuTarget, host = captureMobileWorkspace()): void {
+  if (!host.isCurrent()) return
+  current = { ...target, host }
   // Summoned over a live editing session the keyboard would stay up under
   // the sheet (same treatment as sheet-state / drawer-state).
   ;(document.activeElement as HTMLElement | null)?.blur?.()
@@ -69,7 +70,7 @@ export function isNoteMenuOpen(): boolean {
   return current !== null
 }
 
-function useNoteMenu(): NoteMenuTarget | null {
+function useNoteMenu(): typeof current {
   return useSyncExternalStore(
     (cb) => {
       subscribers.add(cb)
@@ -97,68 +98,26 @@ export function pinNote(path: string): void {
   )
 }
 
-export function renameNote(path: string, title: string): void {
-  void (async () => {
-    const next = await promptApp({
-      title: 'Rename note',
-      initialValue: title,
-      okLabel: 'Rename',
-      validate: (v: string) => (/[\\/]/.test(v) ? 'Title cannot contain / or \\' : null)
-    })
-    if (!next || next === title) return
-    await s().renameNote(path, next)
-  })()
+export function renameNote(path: string, _title: string, host = captureMobileWorkspace()): void {
+  void requestRenameNote(host, path).catch(reportActionError)
 }
-
-export function moveNote(path: string): void {
-  void (async () => {
-    const st = s()
-    const meta = st.notes.find((n) => n.path === path)
-    if (!meta) return
-    const target = await promptApp(buildMoveNotePrompt(meta, st.folders))
-    if (!target) return
-    const dest = parseMoveNoteTarget(target)
-    await s().moveNote(meta.path, dest.folder, dest.subpath)
-  })()
+export function moveNote(path: string, host = captureMobileWorkspace()): void {
+  void requestMoveNote(host, path).catch(reportActionError)
 }
-
 export function copyWikilink(title: string): void {
   void navigator.clipboard.writeText(`[[${title}]]`).catch(() => {})
 }
-
-export function archiveNote(path: string): void {
-  void (async () => {
-    if (!(await s().confirmArchiveNotes([path]))) return
-    await window.zen.archiveNote(path)
-  })()
+export function archiveNote(path: string, host = captureMobileWorkspace()): void {
+  void requestArchiveNote(host, path).catch(reportActionError)
 }
-
-export function trashNote(path: string, title: string): void {
-  void (async () => {
-    const ok = await confirmApp({
-      title: `Delete "${title}"?`,
-      description: 'It will move to the trash.',
-      confirmLabel: 'Delete',
-      danger: true
-    })
-    if (ok) await window.zen.moveToTrash(path)
-  })()
+export function trashNote(path: string, _title: string, host = captureMobileWorkspace()): void {
+  void requestTrashNote(host, path).catch(reportActionError)
 }
-
-export function restoreNote(path: string, from: 'archived' | 'trashed'): void {
-  void (from === 'archived' ? window.zen.unarchiveNote(path) : window.zen.restoreFromTrash(path))
+export function restoreNote(path: string, _from: 'archived' | 'trashed', host = captureMobileWorkspace()): void {
+  void restoreCoreNote(host, path).catch(reportActionError)
 }
-
-export function deleteNoteForever(path: string, title: string): void {
-  void (async () => {
-    const ok = await confirmApp({
-      title: `Delete "${title}" permanently?`,
-      description: 'This cannot be undone.',
-      confirmLabel: 'Delete',
-      danger: true
-    })
-    if (ok) await window.zen.deleteNote(path)
-  })()
+export function deleteNoteForever(path: string, _title: string, host = captureMobileWorkspace()): void {
+  void requestDeleteNotePermanently(host, path).catch(reportActionError)
 }
 
 // ---------------------------------------------------------------------------
@@ -198,32 +157,32 @@ interface SheetRow {
   run: () => void
 }
 
-function rowsFor(target: NoteMenuTarget, pinned: boolean): SheetRow[] {
-  const { path, title, kind } = target
+function rowsFor(target: NoteMenuTarget & { host: NoteActionHost }, pinned: boolean): SheetRow[] {
+  const { path, title, kind, host } = target
   if (kind === 'archived') {
     return [
-      { label: 'Restore', icon: D.restore, run: () => restoreNote(path, 'archived') },
-      { label: 'Delete', icon: D.trash, danger: true, run: () => trashNote(path, title) }
+      { label: 'Restore', icon: D.restore, run: () => restoreNote(path, 'archived', host) },
+      { label: 'Delete', icon: D.trash, danger: true, run: () => trashNote(path, title, host) }
     ]
   }
   if (kind === 'trashed') {
     return [
-      { label: 'Restore', icon: D.restore, run: () => restoreNote(path, 'trashed') },
+      { label: 'Restore', icon: D.restore, run: () => restoreNote(path, 'trashed', host) },
       {
         label: 'Delete permanently',
         icon: D.trash,
         danger: true,
-        run: () => deleteNoteForever(path, title)
+        run: () => deleteNoteForever(path, title, host)
       }
     ]
   }
   return [
-    { label: pinned ? 'Unpin' : 'Pin', icon: D.pin, run: () => pinNote(path) },
-    { label: 'Rename', icon: D.rename, run: () => renameNote(path, title) },
-    { label: 'Move to…', icon: D.move, run: () => moveNote(path) },
+    { label: pinned ? 'Unpin' : 'Pin', icon: D.pin, run: () => { if (host.isCurrent()) pinNote(path) } },
+    { label: 'Rename', icon: D.rename, run: () => renameNote(path, title, host) },
+    { label: 'Move to…', icon: D.move, run: () => moveNote(path, host) },
     { label: 'Copy wikilink', icon: D.link, run: () => copyWikilink(title) },
-    { label: 'Archive', icon: D.archive, run: () => archiveNote(path) },
-    { label: 'Delete', icon: D.trash, danger: true, run: () => trashNote(path, title) }
+    { label: 'Archive', icon: D.archive, run: () => archiveNote(path, host) },
+    { label: 'Delete', icon: D.trash, danger: true, run: () => trashNote(path, title, host) }
   ]
 }
 

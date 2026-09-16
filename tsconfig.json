@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ES2022",
     "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -15,19 +19,16 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "types": ["vite/client", "node"],
-    "baseUrl": ".",
-    "paths": {
-      "@renderer/*": [".zennotes-source/packages/app-core/src/*"],
-      "@shared/*": [".zennotes-source/packages/shared-domain/src/*"],
-      "@bridge-contract/*": [".zennotes-source/packages/bridge-contract/src/*"],
-      "@zennotes/app-core/*": [".zennotes-source/packages/app-core/src/*"],
-      "@zennotes/shared-domain/*": [".zennotes-source/packages/shared-domain/src/*"],
-      "@zennotes/bridge-contract/*": [".zennotes-source/packages/bridge-contract/src/*"],
-      "@desktop-main/*": [".zennotes-source/apps/desktop/src/main/*"],
-      "@codemirror/*": ["node_modules/@codemirror/*"],
-      "@lezer/*": ["node_modules/@lezer/*"]
-    }
+    "types": [
+      "vite/client",
+      "node"
+    ],
+    "baseUrl": "."
   },
-  "include": ["src", "vite.config.ts", "capacitor.config.ts"]
+  "include": [
+    "src",
+    "vite.config.ts",
+    "capacitor.config.ts",
+    "tooling/native-boundary-fixture.ts"
+  ]
 }

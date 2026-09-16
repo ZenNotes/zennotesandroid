@@ -14,7 +14,7 @@
  * (metadata lives in `<head>`, so the whole page is never needed).
  */
 import { CapacitorHttp } from '@capacitor/core'
-import type { LinkMetadata } from '@shared/ipc'
+import type { LinkMetadata } from '@zennotes/shared-domain/ipc'
 
 const TIMEOUT_MS = 6000
 const MAX_CHARS = 512 * 1024

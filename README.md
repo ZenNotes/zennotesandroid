@@ -8,11 +8,12 @@ derived from the iPhone shell at `../zennotesiphone` — the two shells share th
 same structure and bridge modules; platform-specific divergences are noted
 below.
 
-The zennotes repo is consumed **read-only at the exact commit in
-`.zennotes-commit`**. `npm run source:prepare` checks that commit out under the
-ignored `.zennotes-source/` directory and installs its locked dependencies.
-Every typecheck and release build verifies the pin; no ambient sibling checkout
-can silently change a mobile binary.
+The app consumes the public `@zennotes/app-core`, `@zennotes/bridge-contract`,
+and `@zennotes/shared-domain` packages. The local migration candidates are
+vendored under `vendor/zennotes/` with their source identity and checksums;
+`package-lock.json` pins the complete install. No source checkout is used.
+Run `npm run boundaries:check` to verify archives, installed versions, singleton
+editor/React peers, and imports. These candidates have not been published.
 
 ## Architecture
 
@@ -31,7 +32,7 @@ src/
     widgets.ts            publishes it through the ZenWidgets plugin on every change
   ui-mobile/
     MobileShell.tsx       bottom nav (capture ⊕ / search / sidebar / palette),
-                          phone drawer behavior via the shared Zustand store
+                          phone drawer behavior through public core APIs
     mobile.css            safe areas, overlay drawers, keyboard handling
     widget-links.ts       the zennotes:// links the widgets fire; deep-links.ts runs them
 android/                  Capacitor-generated Gradle project (appId md.zennotes)
@@ -117,7 +118,7 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   the misspelling is intentional and load-bearing), same `.zennotes/`
   metadata (vault.json, workspace.json, comments/), same naming/collision
   rules, same NoteMeta extraction regexes, `systemFolderPaths` remaps honored
-  via `@shared/system-folder-paths`.
+  via `@zennotes/shared-domain/system-folder-paths`.
 - **Share sheet → quick capture**: Android needs no app extension — a
   `text/plain` `ACTION_SEND` intent-filter on MainActivity stashes captures in
   SharedPreferences; the app-local `ShareInbox` plugin (same `jsName` and
@@ -163,7 +164,7 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   task rows, kanban cards, and calendar day cells), subtask rollups, archived
   notes retiring their tasks, inline mermaid while writing, text
   replacements, configurable tab size, manual kanban card order, and
-  absence-aware remote reads (`@shared/remote-absence`).
+  absence-aware remote reads (`@zennotes/shared-domain/remote-absence`).
 
 ## Build & run
 
@@ -183,10 +184,12 @@ points at the SDK. Dev loop against a browser (no emulator): `npm run dev` —
 Capacitor plugins are absent in a plain browser, so vault I/O won't work; use
 the emulator for real testing.
 
-`npm run upstream` verifies the generated checkout matches `.zennotes-commit`
-and typechecks the bridge against that exact source. To adopt a newer core,
-update the pin to a reviewed full commit SHA and commit it with the dependent
-mobile changes.
+`npm run upstream` verifies the package boundary and typechecks the host.
+To adopt a new core candidate, copy its three immutable archives into
+`vendor/zennotes/`, update the manifest and `file:` dependencies, then run
+`npm install`, the boundary check, tests, typecheck, production build, and native
+runtime checks together. Keep the previous validated package version available
+for rollback. A package update must not require private core imports.
 
 ## Boot-order gotcha (load-bearing)
 
@@ -251,3 +254,5 @@ signed object upload, completion, manifest, and cleanup with a deterministic
   (`useSystemBackClose` is Android-only: iOS has no system back gesture).
   Underline stayed out on purpose: ZenNotes markdown has no underline
   construct on any platform — an upstream schema decision, not a shell one.
+
+For device-level package checks, see [native boundary validation](docs/native-boundary-validation.md).

@@ -3,9 +3,9 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const require = createRequire(resolve(root, '.zennotes-source/package.json'))
+const require = createRequire(resolve(root, 'package.json'))
 
-/** Load real TypeScript modules with this mobile app's pinned source aliases. */
+/** Load real TypeScript modules with this mobile app's installed public packages. */
 export async function loadMobileModule(
   entry: string | string[],
   mocks: Record<string, Record<string, unknown>> = {}

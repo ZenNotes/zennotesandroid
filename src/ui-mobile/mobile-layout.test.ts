@@ -27,7 +27,5 @@ test('Android editor compositing surfaces always paint the active theme (#49)', 
   }
 })
 
-test('selection toolbar space shrinks the viewport instead of hiding text (#51)', () => {
-  assert.equal(declaration('.zn-phone .cm-editor', 'padding-bottom'), 'var(--zn-selection-clearance, 0px)')
-  assert.equal(declaration('.zn-phone .cm-editor', 'box-sizing'), 'border-box')
-})
+// Editor viewport clearance is owned by app-core's public host registration.
+// Its installed-package browser check verifies the physical editor/menu bounds.

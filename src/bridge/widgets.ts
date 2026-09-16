@@ -20,14 +20,14 @@
  */
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import { useStore } from '@zennotes/app-core/store'
-import { computeTasksRender } from '@zennotes/app-core/lib/tasks-filter'
-import { filterTasksForDisplay, toIsoDateLocal } from '@shared/tasks'
+import { getShellSnapshot, subscribeShell, type ShellSnapshot } from '@zennotes/app-core/shell'
+import { getTasksSnapshot, subscribeTasks, refreshTasks, getTodayTasks, type TasksSnapshot } from '@zennotes/app-core/tasks'
+import { subscribeSettings } from '@zennotes/app-core/settings'
+import { toIsoDateLocal } from '@zennotes/shared-domain/tasks'
 import { isMobileNoteIndexReady } from './mobile-bridge'
 import { getPinnedNotes, subscribePins } from '../ui-mobile/pins'
 import {
   WIDGET_SNAPSHOT_VERSION,
-  filterLiveTasks,
   selectWidgetNotes,
   selectWidgetTasks,
   themeFromTokens,
@@ -45,21 +45,12 @@ interface ZenWidgetsPlugin {
 
 export const ZenWidgets = registerPlugin<ZenWidgetsPlugin>('ZenWidgets')
 
-const NO_COLLAPSE = {
-  today: false,
-  upcoming: false,
-  waiting: false,
-  forwarded: false,
-  done: false,
-  cancelled: false
-}
-
 const PUBLISH_DEBOUNCE_MS = 400
 const PUBLISH_MIN_INTERVAL_MS = 8000
 /** Past this many changed notes one full scan beats per-note rescans. */
 const RESCAN_BATCH_LIMIT = 8
 
-type StoreState = ReturnType<typeof useStore.getState>
+type StoreState = ShellSnapshot
 
 let timer = 0
 let lastPublishedAt = 0
@@ -79,16 +70,8 @@ function themeMode(): WidgetTheme['mode'] {
 
 function buildSnapshot(state: StoreState, now: Date): Omit<WidgetSnapshot, 'generatedAt'> {
   const style = getComputedStyle(document.documentElement)
-  const live = filterLiveTasks(
-    filterTasksForDisplay(state.vaultTasks, state.showArchivedTasks),
-    state.notes
-  )
-  const render = computeTasksRender(live, '', now, NO_COLLAPSE)
-  const { tasks, counts } = selectWidgetTasks(
-    render.groups.today,
-    render.groups.overdueCount ?? 0,
-    toIsoDateLocal(now)
-  )
+  const today = getTodayTasks(now)
+  const { tasks, counts } = selectWidgetTasks(today.tasks, today.overdueCount, toIsoDateLocal(now))
   return {
     version: WIDGET_SNAPSHOT_VERSION,
     vaultName: state.vault?.name ?? null,
@@ -101,10 +84,10 @@ function buildSnapshot(state: StoreState, now: Date): Omit<WidgetSnapshot, 'gene
 }
 
 async function publish(): Promise<void> {
-  const state = useStore.getState()
+  const state = getShellSnapshot()
   // No vault (onboarding, a switch in flight): keep whatever the widgets
   // already show rather than blanking them.
-  if (!state.vault) return
+  if (!state.vault || !state.workspaceRestored) return
   let body: Omit<WidgetSnapshot, 'generatedAt'>
   try {
     body = buildSnapshot(state, new Date())
@@ -136,17 +119,17 @@ function flush(): void {
   void publish()
 }
 
-function reconcileTasks(state: StoreState, prev: StoreState | null): void {
-  if (!state.vault || !isMobileNoteIndexReady()) return
+function reconcileTasks(state: StoreState, prev: StoreState | null, tasks: TasksSnapshot, previousTasks: TasksSnapshot | null): void {
+  if (!state.vault || !state.workspaceRestored || !isMobileNoteIndexReady()) return
   const key = pinsKey(state)
   if (key !== taskVaultKey) {
     taskVaultKey = key
     tasksSettled = false
     knownUpdatedAt = new Map(state.notes.map((n) => [n.path, n.updatedAt]))
-    if (!state.tasksLoading) void state.refreshTasks()
+    if (!tasks.loading) void refreshTasks()
     return
   }
-  if (prev && prev.tasksLoading && !state.tasksLoading) tasksSettled = true
+  if (previousTasks?.loading && !tasks.loading) tasksSettled = true
   if (!prev || state.notes === prev.notes) return
   const changed: string[] = []
   const next = new Map<string, number>()
@@ -157,38 +140,37 @@ function reconcileTasks(state: StoreState, prev: StoreState | null): void {
   knownUpdatedAt = next
   if (changed.length === 0) return
   if (changed.length > RESCAN_BATCH_LIMIT) {
-    if (!state.tasksLoading) void state.refreshTasks()
+    if (!tasks.loading) void refreshTasks()
     return
   }
-  for (const path of changed) void state.rescanTasksForPath(path)
+  for (const path of changed) void refreshTasks(path)
 }
 
 /** Start publishing; returns the teardown (tests / hot paths — the shell
  *  itself never stops). No-op off the native platform. */
 export function installWidgetPublisher(): () => void {
   if (!Capacitor.isNativePlatform()) return () => {}
-  const unsubStore = useStore.subscribe((state, prev) => {
-    reconcileTasks(state, prev)
-    if (
-      state.notes !== prev.notes ||
-      state.vaultTasks !== prev.vaultTasks ||
-      state.showArchivedTasks !== prev.showArchivedTasks ||
-      state.tasksLoading !== prev.tasksLoading ||
-      state.vault !== prev.vault ||
-      state.themeId !== prev.themeId ||
-      state.themeMode !== prev.themeMode
-    ) {
-      schedule()
-    }
-  })
+  let shell = getShellSnapshot()
+  let tasks = getTasksSnapshot()
+  const changed = (): void => {
+    const nextShell = getShellSnapshot(), nextTasks = getTasksSnapshot()
+    const previousShell = shell, previousTasks = tasks
+    // Store subscriptions can fire synchronously when refreshTasks starts.
+    shell = nextShell; tasks = nextTasks
+    reconcileTasks(nextShell, previousShell, nextTasks, previousTasks)
+    schedule()
+  }
+  const unsubShell = subscribeShell(changed)
+  const unsubTasks = subscribeTasks(changed)
+  const unsubSettings = subscribeSettings(schedule)
   const unsubPins = subscribePins(schedule)
   const appState = CapApp.addListener('appStateChange', ({ isActive }) => {
     if (!isActive) flush()
   })
-  reconcileTasks(useStore.getState(), null)
+  reconcileTasks(getShellSnapshot(), null, getTasksSnapshot(), null)
   schedule()
   return () => {
-    unsubStore()
+    unsubShell(); unsubTasks(); unsubSettings()
     unsubPins()
     void appState.then((handle) => handle.remove()).catch(() => {})
     window.clearTimeout(timer)

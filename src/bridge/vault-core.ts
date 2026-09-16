@@ -6,12 +6,12 @@
  * The `attachements` (sic) constant is the intentional, load-bearing legacy
  * spelling — do not "fix" it and do not add an `attachments` variant.
  */
-import type { ImportedAssetKind, NoteFolder, VaultSettings } from '@bridge-contract/ipc'
+import type { ImportedAssetKind, NoteFolder, VaultSettings } from '@zennotes/bridge-contract/ipc'
 import {
   resolveFolderPath,
   systemFolderForDirName,
   type SystemFolderPaths
-} from '@shared/system-folder-paths'
+} from '@zennotes/shared-domain/system-folder-paths'
 import { ASSETS_DIR } from './imported-assets'
 
 // Re-exported so every existing importer keeps reaching them here; they live in

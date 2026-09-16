@@ -1,14 +1,13 @@
 /** Manual browser fixture: npm run dev, then /tooling/android-ui-check.html.
- * Real CM editor, selection toolbar and sheet handle; no account or native
+ * Real CM editor and sheet handle, with a selection-toolbar layout stand-in; no account or native
  * filesystem. This does NOT replace Android IME/selection/splash testing. */
 import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { EditorView } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
-import { EditorSelectionToolbar } from '@zennotes/app-core/components/EditorSelectionToolbar'
 import { installSelectionToolbarSpace } from '../src/ui-mobile/selection-toolbar-space'
 import { SheetHandle } from '../src/ui-mobile/SheetHandle'
-import '@zennotes/app-core/styles/index.css'
+import '@zennotes/app-core/styles.css'
 import '../src/ui-mobile/mobile.css'
 
 function Fixture() {
@@ -55,7 +54,9 @@ function Fixture() {
     </div>
     <button className="zn-mobile-fab" aria-label="Navigation">+</button>
     {selection && <><div className="zn-editor-toolbar" style={{ height: 52 }}>Keyboard toolbar</div>
-      <EditorSelectionToolbar x={100} y={120} onWrap={() => {}} onLink={() => {}} onComment={() => {}} onBlockType={() => {}} onDismiss={() => setSelection(false)} />
+      <div data-selection-toolbar style={{ position: 'fixed', bottom: 52, left: 8, right: 8, height: 44 }}>
+        Selection toolbar layout stand-in
+      </div>
     </>}
     {sheet && <><div className="zn-mobile-sheet-backdrop" onClick={() => setSheet(false)} />
       <div className="zn-mobile-sheet" role="dialog" aria-label="Fixture sheet">

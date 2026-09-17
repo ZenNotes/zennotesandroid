@@ -10,7 +10,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { getShellSnapshot, useShellSnapshot, setNoteSortOrder, type NoteSortOrder } from '@zennotes/app-core/shell'
 import { getBrowseSnapshot, useBrowseSnapshot, getBrowseDirectory, requestCreateBrowseFolder,
-  requestRenameBrowseFolder, requestDeleteBrowseDirectory } from '@zennotes/app-core/browse'
+  requestRenameBrowseFolder, requestRenameBrowseDatabase, requestDeleteBrowseDirectory } from '@zennotes/app-core/browse'
 import { useWorkspaceSnapshot, openLocalVault, pickLocalVault, refreshRemoteProfiles, connectRemoteWorkspace,
   connectRemoteProfile, changeRemoteVaultPath, deleteRemoteProfile } from '@zennotes/app-core/workspace'
 import { openNote, openAppPage } from '@zennotes/app-core/navigation'
@@ -893,7 +893,7 @@ function MobileDrawerBody(props: {
   // Rename/Delete here. Prompts overlay the open drawer (Modal layers above
   // z-49), so the drawer stays put and its list refreshes in place via the
   // vault change events.
-  const [folderMenu, setFolderMenu] = useState<{ subpath: string; name: string; host: ReturnType<typeof captureMobileWorkspace> } | null>(null)
+  const [folderMenu, setFolderMenu] = useState<{ kind: 'folder' | 'database'; subpath: string; name: string; host: ReturnType<typeof captureMobileWorkspace> } | null>(null)
 
   const pinNote = (notePath: string): void => {
     if (!vaultRoot) return
@@ -973,14 +973,12 @@ function MobileDrawerBody(props: {
 
   const renameFolderFromDrawer = (subpath: string, _name: string): void => {
     const host = folderMenu?.host ?? captureMobileWorkspace()
+    const rename = folderMenu?.kind === 'database' ? requestRenameBrowseDatabase : requestRenameBrowseFolder
     setFolderMenu(null)
-    void requestRenameBrowseFolder(host, subpath).catch(reportActionError)
+    void rename(host, subpath).catch(reportActionError)
   }
   const newFolderHere = (): void => {
     void requestCreateBrowseFolder(captureMobileWorkspace(), path).catch(reportActionError)
-  }
-  const deleteDatabase = (subpath: string, _title: string): void => {
-    void requestDeleteBrowseDirectory(captureMobileWorkspace(), subpath).catch(reportActionError)
   }
   const deleteFolder = (subpath: string, _name: string): void => {
     const host = folderMenu?.host ?? captureMobileWorkspace()
@@ -1134,7 +1132,7 @@ function MobileDrawerBody(props: {
                   <button
                     type="button"
                     onClick={() => setPath(subpath)}
-                    {...lp(() => setFolderMenu({ subpath, name, host: captureMobileWorkspace() }))}
+                    {...lp(() => setFolderMenu({ kind: 'folder', subpath, name, host: captureMobileWorkspace() }))}
                   >
                     <Icon d={dateDirs.has(subpath) ? D.calendar : D.folder} />
                     <span className="zn-truncate">{name}</span>
@@ -1153,7 +1151,7 @@ function MobileDrawerBody(props: {
                 key={tabPath}
                 type="button"
                 onClick={() => go(() => openNote(tabPath))}
-                {...lp(() => deleteDatabase(subpath, title))}
+                {...lp(() => setFolderMenu({ kind: 'database', subpath, name: title, host: captureMobileWorkspace() }))}
               >
                 <Icon d={D.database} />
                 <span className="zn-truncate">{title}</span>
@@ -1217,23 +1215,29 @@ function MobileDrawerBody(props: {
               onClick={() => setFolderMenu(null)}
               role="presentation"
             />
-            <div className="zn-mobile-sheet" role="menu" aria-label="Folder actions">
+            <div
+              className="zn-mobile-sheet"
+              role="menu"
+              aria-label={folderMenu.kind === 'database' ? 'Database actions' : 'Folder actions'}
+            >
               <SheetHandle onDismiss={() => setFolderMenu(null)} />
               <div className="zn-mobile-sheet-title zn-truncate">{folderMenu.name}</div>
               <div className="zn-mobile-sheet-scroll">
                 <div className="zn-mobile-sheet-group">
-                  <button
-                    type="button"
-                    className="zn-mobile-sheet-row"
-                    onClick={() => {
-                      const sp = folderMenu.subpath
-                      setFolderMenu(null)
-                      pinFolder(sp)
-                    }}
-                  >
-                    <Icon d={D.pin} />
-                    {pinnedFolders.includes(folderMenu.subpath) ? 'Unpin' : 'Pin'}
-                  </button>
+                  {folderMenu.kind === 'folder' && (
+                    <button
+                      type="button"
+                      className="zn-mobile-sheet-row"
+                      onClick={() => {
+                        const sp = folderMenu.subpath
+                        setFolderMenu(null)
+                        pinFolder(sp)
+                      }}
+                    >
+                      <Icon d={D.pin} />
+                      {pinnedFolders.includes(folderMenu.subpath) ? 'Unpin' : 'Pin'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="zn-mobile-sheet-row"

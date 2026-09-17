@@ -42,6 +42,8 @@ android/                  Capacitor-generated Gradle project (appId md.zennotes)
   app/src/main/java/md/zennotes/
     MainActivity.java     registers native plugins, stashes ACTION_SEND shares
     DirectUploadPlugin.java streams signed object PUTs on Android 7+
+    EdgeSwipePlugin.java  Android-only: claims a mid-screen band of the left edge from
+                          the system Back gesture so the edge swipe can open Browse
     ShareInboxPlugin.java Android ShareInbox (same jsName/contract as iOS)
     WidgetBridgePlugin.java ZenWidgets (same jsName/contract as iOS): writes the snapshot
     widgets/              New Note, Recent Notes, Today's Tasks: AppWidgetProviders +

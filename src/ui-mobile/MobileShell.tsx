@@ -26,6 +26,7 @@ import { MobileEditorToolbar } from './EditorToolbar'
 import { captureMobileWorkspace, reportActionError } from './workspace-context'
 import { MobileDrawer } from './MobileDrawer'
 import { isDrawerOpen, setDrawerOpen, useDrawerOpen } from './drawer-state'
+import { setLeftEdgeClaimed } from '../bridge/edge-swipe'
 import { goHome } from './nav'
 import { installNoteRowGestures, NOTE_ROW_SELECTOR } from './note-row-gestures'
 import { NoteActionSheet } from './note-actions'
@@ -824,8 +825,20 @@ function useTagsEmptyStateHint(): void {
  * (kanban, toolbars) are never hijacked. (A swipe-to-go-back variant was
  * tried 2026-07-16 and reverted at Adib's request — back lives in the
  * header chevron.)
+ *
+ * Android gesture navigation takes every edge swipe as Back, so while the
+ * drawer is closed the shell claims a mid-screen band of the left edge
+ * (bridge/edge-swipe.ts). It is released while the drawer is open, so Back
+ * from that edge still closes it.
  */
 function useEdgeSwipeDrawer(): void {
+  const drawerOpen = useDrawerOpen()
+  useEffect(() => {
+    if (!isPhoneWidth()) return
+    setLeftEdgeClaimed(!drawerOpen)
+    return () => setLeftEdgeClaimed(false)
+  }, [drawerOpen])
+
   useEffect(() => {
     if (!isPhoneWidth()) return
     const EDGE = 28
@@ -2461,8 +2474,9 @@ function SettingsGesturesRow(): React.JSX.Element {
         <div className="zn-settings-layout-title">Swipe gestures</div>
         <div className="zn-settings-layout-desc">
           One-handed shortcuts over an open note. A quick flick left or right,
-          or a pull down from the top of the note. Swiping in from the left
-          screen edge always opens Browse.
+          or a pull down from the top of the note. Swiping in from the middle
+          of the left screen edge opens Browse; to open Browse or the outline
+          from anywhere on a note, set a flick to it here.
         </div>
       </div>
       <div className="zn-settings-gestures-rows">

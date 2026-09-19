@@ -560,6 +560,17 @@
   }
 }
 
+/* The wikilink hover preview is a mouse affordance. A tap on a wikilink in
+   Reading mode synthesizes mouseover/mousemove, which opens the card, and no
+   mouseout ever follows on touch, so the card (portaled to <body>) stays over
+   the note the tap just opened until the next tap in the body. The tap already
+   follows the link, so the card has no job on coarse pointers. */
+@media (pointer: coarse) {
+  .zn-mobile .note-hover-preview {
+    display: none !important;
+  }
+}
+
 /* Help hero (iPad; Help is hidden on phones): the filter grid gives its
    chips column `auto` width, whose max-content (8 chips on one line) squeezes
    the search field to a sliver at tablet widths — stack the grid instead. */
@@ -1651,13 +1662,23 @@
 /* Per-row document icons and section-label glyphs are repeated decoration
    on a 400px screen; the text carries the meaning. */
 .zn-mobile.zn-phone [data-home-nav] [data-home-item] > svg,
+.zn-mobile.zn-phone [data-home-nav] [data-home-favorite] > span:first-child,
 .zn-mobile.zn-phone [data-home-nav] section > div:first-child > span:first-child {
   display: none;
 }
 
-/* Home shows Recent only — the Today task list lives in the Tasks view
-   (drawer → Tasks), no need to repeat it here. */
-.zn-mobile.zn-phone [data-home-nav] section.mb-9 ~ section {
+/* Home shows Recent and Favorites only: the Today task list lives in the
+   Tasks view (drawer → Tasks), no need to repeat it here. Cores before 2.53
+   stamp no data-home-section, and there every section after Recent is Today. */
+.zn-mobile.zn-phone [data-home-nav] section[data-home-section='today'],
+.zn-mobile.zn-phone [data-home-nav] section.mb-9 ~ section:not([data-home-section]) {
+  display: none;
+}
+
+/* Folder favorites open the desktop sidebar tree, which phones replace with
+   the drawer. Keep note favorites only, and drop the section once none remain. */
+.zn-mobile.zn-phone [data-home-nav] li:has(> [data-home-favorite='folder']),
+.zn-mobile.zn-phone [data-home-nav] section[data-home-section='favorites']:not(:has([data-home-favorite='note'])) {
   display: none;
 }
 

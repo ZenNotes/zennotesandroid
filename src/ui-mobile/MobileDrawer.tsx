@@ -10,7 +10,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { getShellSnapshot, useShellSnapshot, setNoteSortOrder, type NoteSortOrder } from '@zennotes/app-core/shell'
 import { getBrowseSnapshot, useBrowseSnapshot, getBrowseDirectory, requestCreateBrowseFolder,
-  requestRenameBrowseFolder, requestRenameBrowseDatabase, requestDeleteBrowseDirectory } from '@zennotes/app-core/browse'
+  requestRenameBrowseFolder, requestRenameBrowseDatabase, requestMoveBrowseDirectory,
+  requestDeleteBrowseDirectory } from '@zennotes/app-core/browse'
 import { useWorkspaceSnapshot, openLocalVault, pickLocalVault, refreshRemoteProfiles, connectRemoteWorkspace,
   connectRemoteProfile, changeRemoteVaultPath, deleteRemoteProfile } from '@zennotes/app-core/workspace'
 import { openNote, openAppPage } from '@zennotes/app-core/navigation'
@@ -889,8 +890,8 @@ function MobileDrawerBody(props: {
   const [sortOpen, setSortOpen] = useState(false)
   // Long-pressing a row opens its action sheet — the phone's right-click
   // (Discord folder feedback). Notes open the shell-wide note sheet
-  // (note-actions.tsx, shared with app-core's lists); folders get
-  // Rename/Delete here. Prompts overlay the open drawer (Modal layers above
+  // (note-actions.tsx, shared with app-core's lists); folders and databases
+  // get Rename/Move/Delete here. Prompts overlay the open drawer (Modal layers above
   // z-49), so the drawer stays put and its list refreshes in place via the
   // vault change events.
   const [folderMenu, setFolderMenu] = useState<{ kind: 'folder' | 'database'; subpath: string; name: string; host: ReturnType<typeof captureMobileWorkspace> } | null>(null)
@@ -979,6 +980,15 @@ function MobileDrawerBody(props: {
   }
   const newFolderHere = (): void => {
     void requestCreateBrowseFolder(captureMobileWorkspace(), path).catch(reportActionError)
+  }
+  // Core keeps the leaf name (a database keeps its .base suffix) and carries
+  // tabs, folder icons, favorites and manual order to the new path. Folder
+  // pins are keyed by subpath and are left alone, as Rename leaves them: an
+  // orphaned pin never matches a row and is pruned on the next toggle.
+  const moveFolderFromDrawer = (subpath: string): void => {
+    const host = folderMenu?.host ?? captureMobileWorkspace()
+    setFolderMenu(null)
+    void requestMoveBrowseDirectory(host, subpath).catch(reportActionError)
   }
   const deleteFolder = (subpath: string, _name: string): void => {
     const host = folderMenu?.host ?? captureMobileWorkspace()
@@ -1245,6 +1255,14 @@ function MobileDrawerBody(props: {
                   >
                     <Icon d={D.rename} />
                     Rename
+                  </button>
+                  <button
+                    type="button"
+                    className="zn-mobile-sheet-row"
+                    onClick={() => moveFolderFromDrawer(folderMenu.subpath)}
+                  >
+                    <Icon d={D.move} />
+                    Move to…
                   </button>
                   <button
                     type="button"

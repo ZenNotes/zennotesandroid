@@ -27,5 +27,17 @@ test('Android editor compositing surfaces always paint the active theme (#49)', 
   }
 })
 
+test('the wikilink hover preview card is hidden on touch, where no mouseout ever dismisses it', () => {
+  let parentQuery: string | undefined
+  let important = false
+  css.walkRules('.zn-mobile .note-hover-preview', (rule) => {
+    parentQuery = rule.parent?.type === 'atrule' ? (rule.parent as postcss.AtRule).params : undefined
+    rule.walkDecls('display', (decl) => { important = decl.important === true })
+  })
+  assert.equal(declaration('.zn-mobile .note-hover-preview', 'display'), 'none')
+  assert.equal(important, true)
+  assert.equal(parentQuery, '(pointer: coarse)')
+})
+
 // Editor viewport clearance is owned by app-core's public host registration.
 // Its installed-package browser check verifies the physical editor/menu bounds.

@@ -382,40 +382,17 @@ public class SafFsPlugin extends Plugin {
             int ti = to.lastIndexOf('/');
             String fromDir = fi == -1 ? "" : from.substring(0, fi);
             String toDir = ti == -1 ? "" : to.substring(0, ti);
+            String fromName = baseName(from);
+            String targetName = baseName(to);
             if (fromDir.equals(toDir)) {
-                Uri renamed = DocumentsContract.renameDocument(
-                    resolver(), docUri(tree, src.docId), baseName(to)
-                );
-                if (renamed == null) throw new Exception("Rename refused");
+                renameExactly(tree, src.docId, fromName, targetName);
             } else {
                 Entry fromParent = resolve(tree, fromDir);
                 String toParentId = ensureParentDirs(tree, to);
-                Uri moved = DocumentsContract.moveDocument(
-                    resolver(),
-                    docUri(tree, src.docId),
-                    docUri(tree, fromParent.docId),
-                    docUri(tree, toParentId)
-                );
-                if (moved == null) throw new Exception("Move refused");
-                String movedId = DocumentsContract.getDocumentId(moved);
-                String targetName = baseName(to);
-                if (!baseName(from).equals(targetName)) {
-                    try {
-                        if (DocumentsContract.renameDocument(resolver(), docUri(tree, movedId), targetName) == null) {
-                            throw new Exception("Rename after move refused");
-                        }
-                    } catch (Exception renameError) {
-                        // A rename promise must not reject after silently changing parents.
-                        try {
-                            Uri restored = DocumentsContract.moveDocument(resolver(), docUri(tree, movedId),
-                                docUri(tree, toParentId), docUri(tree, fromParent.docId));
-                            if (restored == null) throw new Exception("Rollback move refused");
-                        } catch (Exception rollbackError) {
-                            throw new Exception("FOLDER_STATE_UNCERTAIN: Rename failed and could not be restored: "
-                                + rollbackError.getMessage(), renameError);
-                        }
-                        throw renameError;
-                    }
+                if (fromName.equals(targetName)) {
+                    moveDocument(tree, src.docId, fromParent.docId, toParentId);
+                } else {
+                    moveRenamed(tree, src.docId, fromParent.docId, toParentId, fromName, targetName);
                 }
             }
             invalidateParent(tree, from);
@@ -426,6 +403,111 @@ public class SafFsPlugin extends Plugin {
             listings.clear();
             call.reject("rename failed: " + e.getMessage());
         }
+    }
+
+    /** One provider move. The document keeps its display name. */
+    private String moveDocument(Uri tree, String docId, String fromParentId, String toParentId) throws Exception {
+        Uri moved = DocumentsContract.moveDocument(
+            resolver(), docUri(tree, docId), docUri(tree, fromParentId), docUri(tree, toParentId)
+        );
+        if (moved == null) throw new Exception("Move refused");
+        return DocumentsContract.getDocumentId(moved);
+    }
+
+    /**
+     * Rename and insist on the exact name. The platform file provider does not
+     * refuse a taken name: it quietly lands on a "name (1)" variant, so the
+     * caller would believe the rename succeeded while the file sits at a path
+     * nobody asked for. Such a rename is undone and reported instead.
+     */
+    private String renameExactly(Uri tree, String docId, String currentName, String name) throws Exception {
+        Uri renamed = DocumentsContract.renameDocument(resolver(), docUri(tree, docId), name);
+        if (renamed == null) throw new Exception("Rename refused");
+        String renamedId = DocumentsContract.getDocumentId(renamed);
+        String actual = displayName(renamed);
+        if (actual == null || actual.equals(name)) return renamedId;
+        try {
+            if (DocumentsContract.renameDocument(resolver(), docUri(tree, renamedId), currentName) == null) {
+                throw new Exception("Rollback rename refused");
+            }
+        } catch (Exception rollbackError) {
+            throw new Exception("FOLDER_STATE_UNCERTAIN: \"" + name + "\" is taken and the file is now named \""
+                + actual + "\": " + rollbackError.getMessage());
+        }
+        throw new Exception("\"" + name + "\" already exists");
+    }
+
+    /**
+     * A move that also changes the name. moveDocument keeps the display name,
+     * so moving first parks the file at targetDir/fromName and fails with
+     * "Already exists" whenever an unrelated file holds that name there, even
+     * though the destination itself is free. Cloud sync hit this on every
+     * retry when the desktop trashed Untitled.md as "trash/Untitled 2.md" and
+     * the phone's trash still held an older Untitled.md (desktop #813). Take
+     * the name first, inside the source directory, then cross directories: the
+     * only path that has to be free is the one the caller asked for. When the
+     * source directory already holds the target name (in any letter case, the
+     * storage may fold case), travel under a hidden temporary name and take the
+     * final name after the move.
+     */
+    private void moveRenamed(Uri tree, String docId, String fromParentId, String toParentId,
+                             String fromName, String targetName) throws Exception {
+        Map<String, Entry> siblings = listings.get(cacheKey(tree, fromParentId));
+        if (siblings == null) siblings = listChildren(tree, fromParentId);
+        boolean targetNameTaken = false;
+        for (String sibling : siblings.keySet()) {
+            if (sibling.equalsIgnoreCase(targetName)) {
+                targetNameTaken = true;
+                break;
+            }
+        }
+        String travelName = targetNameTaken ? temporaryName(targetName) : targetName;
+        String travelId = renameExactly(tree, docId, fromName, travelName);
+        String movedId;
+        try {
+            movedId = moveDocument(tree, travelId, fromParentId, toParentId);
+        } catch (Exception moveError) {
+            // A rename promise must not reject after silently changing the name.
+            try {
+                if (DocumentsContract.renameDocument(resolver(), docUri(tree, travelId), fromName) == null) {
+                    throw new Exception("Rollback rename refused");
+                }
+            } catch (Exception rollbackError) {
+                throw new Exception("FOLDER_STATE_UNCERTAIN: Move failed and the name could not be restored: "
+                    + rollbackError.getMessage(), moveError);
+            }
+            throw moveError;
+        }
+        if (travelName.equals(targetName)) return;
+        try {
+            renameExactly(tree, movedId, travelName, targetName);
+        } catch (Exception renameError) {
+            // A rename promise must not reject after silently changing parents.
+            try {
+                String restoredId = moveDocument(tree, movedId, toParentId, fromParentId);
+                if (DocumentsContract.renameDocument(resolver(), docUri(tree, restoredId), fromName) == null) {
+                    throw new Exception("Rollback rename refused");
+                }
+            } catch (Exception rollbackError) {
+                throw new Exception("FOLDER_STATE_UNCERTAIN: Rename failed and could not be restored: "
+                    + rollbackError.getMessage(), renameError);
+            }
+            throw renameError;
+        }
+    }
+
+    private static String temporaryName(String name) {
+        return ".zn-move-" + Long.toHexString(System.nanoTime()) + "-" + name;
+    }
+
+    /** The provider's current display name for a document, or null when it cannot be read. */
+    private String displayName(Uri doc) {
+        try (Cursor c = resolver().query(doc, new String[] { Document.COLUMN_DISPLAY_NAME }, null, null, null)) {
+            if (c != null && c.moveToFirst() && !c.isNull(0)) return c.getString(0);
+        } catch (Exception ignored) {
+            // An unverifiable rename is taken at its word rather than failed.
+        }
+        return null;
     }
 
     @PluginMethod

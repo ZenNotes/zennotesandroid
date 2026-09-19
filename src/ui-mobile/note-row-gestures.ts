@@ -128,9 +128,15 @@ const ownChildren = (frame: HTMLElement): HTMLElement[] =>
  * HomeView renders its Recent list as `ul > li > button[data-home-item]`
  * (one button per li; task rows put two buttons in their li) in the same
  * order as its `recent` memo: every non-trash, non-archive note by updatedAt
- * descending. Resolve the row by position and confirm by title.
+ * descending. Cores from 2.53 stamp `data-home-note-path` on every note row
+ * (Recent and Favorites); older cores need the row resolved by position and
+ * confirmed by title.
  */
 function homeRecentPath(row: HTMLElement): string | null {
+  const stamped = row.dataset.homeNotePath
+  if (stamped) return stamped
+  // A favorite row without a note path is a folder: not a note row at all.
+  if (row.dataset.homeFavorite !== undefined) return null
   const li = row.parentElement
   // Count the li's own children only: while a row is engaged the action /
   // pin layers are appended into this very li, and counting them made an

@@ -13,7 +13,8 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics'
 import { Keyboard } from '@capacitor/keyboard'
 import { getShellSnapshot, useShellSnapshot, subscribeShell, getAdjacentNotePath,
   getTagPresenceSnapshot, subscribeTagPresence } from '@zennotes/app-core/shell'
-import { getBrowseSnapshot, requestCreateBrowseFolder, requestDeleteBrowseDirectory } from '@zennotes/app-core/browse'
+import { getBrowseSnapshot, requestCreateBrowseFolder, requestRenameBrowseDatabase,
+  requestMoveBrowseDirectory, requestDeleteBrowseDirectory, type BrowseActionHost } from '@zennotes/app-core/browse'
 import { getWorkspaceSnapshot, useWorkspaceSnapshot, subscribeWorkspace, readPersistedHomeState,
   configureWorkspacePresentation, pickLocalVault, openLocalVault, connectRemoteProfile, refreshRemoteProfiles } from '@zennotes/app-core/workspace'
 import { getSettingsSnapshot, useSettingsSnapshot, subscribeSettings, setSettingsVisible, setEditorFontSize } from '@zennotes/app-core/settings'
@@ -121,6 +122,7 @@ const ICONS = {
   tabs: 'M4 6h16M4 6v12h16V6M9 6v12',
   outline: 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01',
   rename: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z',
+  star: 'M12 3l2.7 6.2 6.8.6-5.1 4.5 1.5 6.7L12 17.5 6.1 21l1.5-6.7L2.5 9.8l6.8-.6z',
   eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM12 15a3 3 0 100-6 3 3 0 000 6z',
   move: 'M5 8V6a2 2 0 012-2h3l2 2h7a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2v-4M2 13h9m0 0l-3-3m3 3l-3 3',
   link: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71',
@@ -140,13 +142,23 @@ interface SheetRow {
 
 const RESTORE_ICON = 'M3 9l4-4m-4 4l4 4M3 9h13a5 5 0 015 5v0a5 5 0 01-5 5H9'
 
-function noteRowsFor(folder: string | null): SheetRow[] {
+function noteRowsFor(folder: string | null, favorite: boolean): SheetRow[] {
   const base: SheetRow[] = [
     { id: 'nav.outline', label: 'Outline', icon: ICONS.outline },
     { id: 'note.rename', label: 'Rename', icon: ICONS.rename },
     { id: 'note.move', label: 'Move to…', icon: ICONS.move },
     { id: 'note.copy-wikilink', label: 'Copy wikilink', icon: ICONS.link }
   ]
+  // Favorites are the vault's list (vault.json), the section Home and the
+  // desktop sidebar show; the palette command behind this row refuses
+  // trashed notes, so the row hides with it. (#810)
+  if (folder !== 'trash') {
+    base.push({
+      id: 'note.favorite',
+      label: favorite ? 'Remove from Favorites' : 'Add to Favorites',
+      icon: ICONS.star
+    })
+  }
   if (folder === 'archive') {
     base.push({ id: 'note.unarchive', label: 'Unarchive', icon: RESTORE_ICON })
   } else if (folder === 'trash') {
@@ -190,11 +202,16 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
   const title = shell.selectedNote?.title ?? 'ZenNotes'
   const workspace = useWorkspaceSnapshot()
   const host = useMemo(() => captureMobileWorkspace(), [shell.vault, workspaceMode, workspace.generation, workspace.transitioning])
-  const deleteOpenDatabase = (): void => {
+  // The open database gets the same Rename / Move / Delete set as its Browse
+  // row (#77): core keeps the .base suffix on rename and carries the open tab
+  // along on a move, so the grid stays on screen under its new name or path.
+  const runDatabaseAction = (
+    action: (host: BrowseActionHost, directory: string) => Promise<unknown>
+  ): void => {
     if (!dbFormDir) return
     onClose()
     window.setTimeout(() => {
-      void requestDeleteBrowseDirectory(host, dbFormDir).catch(reportActionError)
+      void action(host, dbFormDir).catch(reportActionError)
     }, 30)
   }
 
@@ -263,8 +280,24 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
             <div className="zn-mobile-sheet-group">
               <button
                 type="button"
+                className="zn-mobile-sheet-row"
+                onClick={() => runDatabaseAction(requestRenameBrowseDatabase)}
+              >
+                <Icon d={ICONS.rename} />
+                Rename
+              </button>
+              <button
+                type="button"
+                className="zn-mobile-sheet-row"
+                onClick={() => runDatabaseAction(requestMoveBrowseDirectory)}
+              >
+                <Icon d={ICONS.move} />
+                Move to…
+              </button>
+              <button
+                type="button"
                 className="zn-mobile-sheet-row zn-danger"
-                onClick={deleteOpenDatabase}
+                onClick={() => runDatabaseAction(requestDeleteBrowseDirectory)}
               >
                 <Icon d={ICONS.trash} />
                 Delete
@@ -273,7 +306,7 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
           )}
           {hasNote && (
             <div className="zn-mobile-sheet-group">
-              {noteRowsFor(noteFolder).map((row) => (
+              {noteRowsFor(noteFolder, !!selectedPath && shell.favorites.includes(selectedPath)).map((row) => (
                 <button
                   key={row.id}
                   type="button"
@@ -391,8 +424,17 @@ function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
 }
 
 function MobileNav(): React.JSX.Element | null {
-  const vault = useShellSnapshot().vault
+  const shell = useShellSnapshot()
+  const vault = shell.vault
   const { hasOpenNote, mode } = useEditorPresentation()
+  // Two independent signals for "a note is open" (#76: after following a
+  // link, Edit/Read once vanished from this menu until the app restarted,
+  // not reproduced since). `hasOpenNote` is core's content cache holding the
+  // selected path; `selectedNote` is the same path found in the note index,
+  // which is what the ••• sheet already gates its Edit/Read on. Either one
+  // shows the note entries, so a cache-side hiccup cannot take them away
+  // while the note is plainly on screen.
+  const noteOpen = hasOpenNote || !!shell.selectedNote
   const isPreview = mode === 'preview'
   const [sheetOpen, setSheetOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -448,7 +490,7 @@ function MobileNav(): React.JSX.Element | null {
     // Edit/Read is note-only: switch the open note between reading and editing
     // without digging into the ••• sheet (Adib's ask). Shows the mode you'd
     // switch TO.
-    ...(hasOpenNote
+    ...(noteOpen
       ? [
           {
             label: isPreview ? 'Edit' : 'Read',
@@ -902,12 +944,38 @@ function useEdgeSwipeDrawer(): void {
 }
 
 /**
- * Horizontal flick over the note surface. What it does is the user's choice
- * (Settings → Appearance → Swipe gestures, issue #24): by default it opens
- * the previous (swipe right) or next (swipe left) note, in EXACTLY the order
- * the Browse drawer shows for that folder (note-order.ts, pinned first);
- * either direction can instead open Browse or the note outline — the
- * Obsidian-style sidebar swipes — or do nothing.
+ * Where the flick and pull-down gestures answer (issue #75). They used to
+ * take the note body only (`.cm-editor, .prose-zen`), which left them dead on
+ * Home, Tasks, Quick Notes, Tags, Files, Archive and Trash. App-core renders
+ * those pages inside the same pane section as the note, so the pane is the
+ * surface, minus what already means something under a finger there: the tab
+ * strip and headers (their buttons, the strip's horizontal scroll), the side
+ * panels and their tucked rail, and text fields (a drag there selects). The
+ * FAB, sheets, drawer and dialogs live outside the pane and stay excluded,
+ * as before. The pinch stays note-only: it scales the editor font.
+ */
+const GESTURE_NOTE_SURFACE = '.cm-editor, .prose-zen'
+const GESTURE_PANE_CHROME =
+  'header, .glass-header, nav, input, textarea, select, [contenteditable], ' +
+  '[data-connections-panel], [data-comments-panel], [data-outline-panel], [data-calendar-panel]'
+
+function gestureSurfaceAt(target: EventTarget | null): 'note' | 'page' | null {
+  const el = target as HTMLElement | null
+  if (!el || typeof el.closest !== 'function') return null
+  if (el.closest(GESTURE_NOTE_SURFACE)) return 'note'
+  if (!el.closest('[data-pane-id]') || el.closest(GESTURE_PANE_CHROME)) return null
+  return 'page'
+}
+
+/**
+ * Horizontal flick over the note surface or a page. What it does is the
+ * user's choice (Settings → Appearance → Swipe gestures, issue #24): by
+ * default it opens the previous (swipe right) or next (swipe left) note, in
+ * EXACTLY the order the Browse drawer shows for that folder (note-order.ts,
+ * pinned first); either direction can instead open Browse or the note
+ * outline (the Obsidian-style sidebar swipes), or do nothing. On a page
+ * (Home, Trash, ...) there is no open note, so prev/next and the outline
+ * (showOutline needs an active note) do nothing there; Browse opens (#75).
  *
  * Deliberately strict about what counts as a flick — everything horizontal
  * on this surface already means something else somewhere:
@@ -915,6 +983,9 @@ function useEdgeSwipeDrawer(): void {
  *   system back-gesture surfaces) — skipped;
  * - anything inside a horizontally scrollable element (tables, code blocks,
  *   kanban) that can still scroll in the flick direction is a scroll;
+ * - the note rows on the pages own their horizontal swipe (reveal actions,
+ *   pin: note-row-gestures.ts, SwipeRow), so a flick that starts on a row
+ *   is theirs;
  * - an active text selection means the user is adjusting it — never navigate;
  * - slow drags are selections or hesitation, not flicks (max 400ms);
  * - two-finger touches belong to pinch-to-resize.
@@ -952,8 +1023,9 @@ function useNoteSwipeGestures(): void {
       const t = e.touches[0]!
       if (t.clientX < EDGE || t.clientX > window.innerWidth - EDGE) return
       const target = e.target as HTMLElement | null
-      // Only over the note surface — not the toolbar, FAB, sheets, headers.
-      if (!target?.closest?.('.cm-editor, .prose-zen')) return
+      const surface = gestureSurfaceAt(target)
+      if (!surface) return
+      if (surface === 'page' && target!.closest(`${NOTE_ROW_SELECTOR}, [data-zn-swipe]`)) return
       start = { x: t.clientX, y: t.clientY, t: Date.now(), target, host: captureMobileWorkspace() }
     }
 
@@ -1015,7 +1087,9 @@ function useNoteSwipeGestures(): void {
  * never qualifies), travel mostly vertically, and cross the threshold before
  * release; a floating hint shows what release will do and the threshold
  * crossing buzzes once. Text selection and second fingers abandon it. Note
- * surface only — the drawer keeps its own pull-to-refresh.
+ * surface and pages (gestureSurfaceAt, #75), including their note rows: a
+ * pull is vertical, so it never competes with a row's horizontal swipe. The
+ * drawer keeps its own pull-to-refresh.
  */
 function usePullDownAction(): void {
   useEffect(() => {
@@ -1062,7 +1136,7 @@ function usePullDownAction(): void {
       if (getGesturePrefs().pullDown === 'off') return
       const t = e.touches[0]!
       const target = e.target as HTMLElement | null
-      if (!target?.closest?.('.cm-editor, .prose-zen')) return
+      if (!gestureSurfaceAt(target)) return
       if (scrollTopOf(target) > 0) return
       start = { x: t.clientX, y: t.clientY }
     }
@@ -2473,10 +2547,11 @@ function SettingsGesturesRow(): React.JSX.Element {
       <div className="zn-settings-layout-text">
         <div className="zn-settings-layout-title">Swipe gestures</div>
         <div className="zn-settings-layout-desc">
-          One-handed shortcuts over an open note. A quick flick left or right,
-          or a pull down from the top of the note. Swiping in from the middle
-          of the left screen edge opens Browse; to open Browse or the outline
-          from anywhere on a note, set a flick to it here.
+          One-handed shortcuts over a note or a page such as Home, Tasks or
+          Trash. A quick flick left or right, or a pull down from the top.
+          Swiping in from the middle of the left screen edge opens Browse; to
+          open Browse or the outline from anywhere, set a flick to it here.
+          Previous, next and the outline need an open note.
         </div>
       </div>
       <div className="zn-settings-gestures-rows">

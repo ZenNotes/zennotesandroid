@@ -8,8 +8,18 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const manifest = JSON.parse(await readFile(join(root, 'vendor/zennotes/manifest.json'), 'utf8'))
 const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+// Only archives built from a clean, committed upstream tree may ship: a dirty
+// build has no reviewable source. Trying an unreleased core locally is fine,
+// but has to be said out loud so it cannot slip into a release unnoticed.
+const allowDirty = process.env.ZEN_ALLOW_DIRTY_CORE === '1'
 for (const entry of [manifest, ...manifest.dependencies]) {
   assert.match(entry.file, /^[a-z0-9.-]+\.tgz$/)
+  assert.match(entry.sourceCommit ?? '', /^[0-9a-f]{40}$/, `${entry.name} sourceCommit`)
+  assert.ok(
+    entry.workingTreeDirty === false || allowDirty,
+    `${entry.name} was built from a dirty upstream tree (${entry.sourceCommit.slice(0, 8)}+); ` +
+      'not shippable. Set ZEN_ALLOW_DIRTY_CORE=1 to try it locally.'
+  )
   const archive = await readFile(join(root, 'vendor/zennotes', entry.file))
   assert.equal(createHash('sha256').update(archive).digest('hex'), entry.sha256, `${entry.name} checksum`)
   assert.equal(pkg.dependencies[entry.name], `file:vendor/zennotes/${entry.file}`)

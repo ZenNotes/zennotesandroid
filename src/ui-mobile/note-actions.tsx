@@ -10,18 +10,22 @@
  * Ported from the iPhone shell (note-actions.tsx there); only the pin key
  * differs.
  *
- * Kinds: 'note' mirrors the ••• sheet (Pin, Rename, Move to…, Copy wikilink,
- * Archive, Delete); 'archived' is Restore / Delete; 'trashed' is Restore /
- * Delete permanently — the sets app-core's own views expose on desktop.
+ * Kinds: 'note' mirrors the ••• sheet (Pin, Favorite, Rename, Move to…,
+ * Copy wikilink, Archive, Delete); 'archived' is Restore / Delete; 'trashed'
+ * is Restore / Delete permanently, the sets app-core's own views expose on
+ * desktop. Pin is this phone's own list order; Favorite is the vault's list
+ * (vault.json), the one Home and the desktop sidebar show, which a phone can
+ * otherwise only reach through the ••• sheet's palette command (#810).
  * Prompts and confirms overlay whatever is open (Modal layers above the
  * drawer and the sheet), and the lists refresh in place via the vault
  * change events every mutating bridge call emits.
  */
 import React, { useSyncExternalStore } from 'react'
 import { Keyboard } from '@capacitor/keyboard'
-import { getShellSnapshot } from '@zennotes/app-core/shell'
+import { getShellSnapshot, useShellSnapshot } from '@zennotes/app-core/shell'
 import { requestRenameNote, requestMoveNote, requestArchiveNote, requestTrashNote,
-  restoreNote as restoreCoreNote, requestDeleteNotePermanently, type NoteActionHost } from '@zennotes/app-core/notes'
+  restoreNote as restoreCoreNote, requestDeleteNotePermanently, requestToggleNoteFavorite,
+  type NoteActionHost } from '@zennotes/app-core/notes'
 import { captureMobileWorkspace, reportActionError } from './workspace-context'
 import { getPinnedNotes, toggleNotePin, usePins } from './pins'
 import { SheetHandle } from './SheetHandle'
@@ -98,6 +102,14 @@ export function pinNote(path: string): void {
   )
 }
 
+export function isNoteFavorite(path: string): boolean {
+  return s().favorites.includes(path)
+}
+
+export function favoriteNote(path: string, host = captureMobileWorkspace()): void {
+  void requestToggleNoteFavorite(host, path).catch(reportActionError)
+}
+
 export function renameNote(path: string, _title: string, host = captureMobileWorkspace()): void {
   void requestRenameNote(host, path).catch(reportActionError)
 }
@@ -126,6 +138,7 @@ export function deleteNoteForever(path: string, _title: string, host = captureMo
 
 const D = {
   pin: 'M12 17v5M9 3h6l-1 7 3 2v3H7v-3l3-2-1-7z',
+  star: 'M12 3l2.7 6.2 6.8.6-5.1 4.5 1.5 6.7L12 17.5 6.1 21l1.5-6.7L2.5 9.8l6.8-.6z',
   rename: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z',
   move: 'M5 8V6a2 2 0 012-2h3l2 2h7a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2v-4M2 13h9m0 0l-3-3m3 3l-3 3',
   link: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71',
@@ -157,7 +170,11 @@ interface SheetRow {
   run: () => void
 }
 
-function rowsFor(target: NoteMenuTarget & { host: NoteActionHost }, pinned: boolean): SheetRow[] {
+function rowsFor(
+  target: NoteMenuTarget & { host: NoteActionHost },
+  pinned: boolean,
+  favorite: boolean
+): SheetRow[] {
   const { path, title, kind, host } = target
   if (kind === 'archived') {
     return [
@@ -178,6 +195,11 @@ function rowsFor(target: NoteMenuTarget & { host: NoteActionHost }, pinned: bool
   }
   return [
     { label: pinned ? 'Unpin' : 'Pin', icon: D.pin, run: () => { if (host.isCurrent()) pinNote(path) } },
+    {
+      label: favorite ? 'Remove from Favorites' : 'Add to Favorites',
+      icon: D.star,
+      run: () => favoriteNote(path, host)
+    },
     { label: 'Rename', icon: D.rename, run: () => renameNote(path, title, host) },
     { label: 'Move to…', icon: D.move, run: () => moveNote(path, host) },
     { label: 'Copy wikilink', icon: D.link, run: () => copyWikilink(title) },
@@ -190,8 +212,9 @@ function rowsFor(target: NoteMenuTarget & { host: NoteActionHost }, pinned: bool
 export function NoteActionSheet(): React.JSX.Element | null {
   const target = useNoteMenu()
   const pins = usePins(vaultKey())
+  const favorites = useShellSnapshot().favorites
   if (!target) return null
-  const rows = rowsFor(target, pins.notes.includes(target.path))
+  const rows = rowsFor(target, pins.notes.includes(target.path), favorites.includes(target.path))
   return (
     <>
       <div className="zn-mobile-sheet-backdrop" onClick={closeNoteMenu} role="presentation" />

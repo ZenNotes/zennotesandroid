@@ -132,7 +132,7 @@ import {
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 import { isPhoneViewport } from '../viewport'
 
-let appVersion = '1.1.23'
+let appVersion = '1.1.24'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {
@@ -380,7 +380,13 @@ function mobileAppInfo(): ZenAppInfo {
     description: 'ZenNotes for Android',
     homepage: 'https://zennotes.org',
     runtime: 'web',
-    hostKind: 'android'
+    hostKind: 'android',
+    // The WebView's user agent names the Android version, the device model
+    // and the Chrome build, the lines a bug report from a phone needs beside
+    // the app version (#814); nothing else here is guessed.
+    ...(typeof navigator !== 'undefined' && navigator.userAgent
+      ? { engine: navigator.userAgent }
+      : {})
   }
 }
 

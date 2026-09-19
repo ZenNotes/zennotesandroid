@@ -1,7 +1,7 @@
 {
   "name": "zennotes-android",
   "private": true,
-  "version": "1.1.23",
+  "version": "1.1.24",
   "type": "module",
   "description": "ZenNotes for Android — Capacitor shell over the ZenNotes app core",
   "homepage": "https://zennotes.org",
@@ -66,9 +66,9 @@
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2",
     "zustand": "^5.0.2",
-    "@zennotes/app-core": "file:vendor/zennotes/zennotes-app-core-2.51.0-core.h49d73b531d346192.tgz",
-    "@zennotes/bridge-contract": "file:vendor/zennotes/zennotes-bridge-contract-2.51.0-boundaries.h18d39d9887df8897.tgz",
-    "@zennotes/shared-domain": "file:vendor/zennotes/zennotes-shared-domain-2.51.0-boundaries.h18d39d9887df8897.tgz",
+    "@zennotes/app-core": "file:vendor/zennotes/zennotes-app-core-2.53.0-core.h598c8d004c9228a3.tgz",
+    "@zennotes/bridge-contract": "file:vendor/zennotes/zennotes-bridge-contract-2.53.0-boundaries.h193dbe157c4e64d2.tgz",
+    "@zennotes/shared-domain": "file:vendor/zennotes/zennotes-shared-domain-2.53.0-boundaries.h193dbe157c4e64d2.tgz",
     "@lezer/common": "^1.5.2"
   },
   "devDependencies": {

@@ -173,9 +173,18 @@ export async function getMobileCloudSettingsConflict(
 ): Promise<CloudSyncSettingsConflict | null> {
   const parked = await vault.fs.statOrNull(CLOUD_SYNC_SETTINGS_CONFLICT_PATH)
   if (parked?.type !== 'file') return null
+  const raw = await vault.fs.readTextOrNull(CLOUD_SYNC_SETTINGS_CONFLICT_PATH)
+  if (raw === null) return null
+  // The parsed copy lets the app show what differs and offer a per-section
+  // answer (desktop parity, #816). A copy that does not parse is still a
+  // pending question (the file is there, and sync will not touch vault.json
+  // until it is gone), so it is reported without the contents and the app
+  // asks whole-file.
+  const cloudSettings = parseParkedSettings(raw)
   return {
     path: CLOUD_SYNC_VAULT_SETTINGS_PATH,
-    cloud_path: CLOUD_SYNC_SETTINGS_CONFLICT_PATH
+    cloud_path: CLOUD_SYNC_SETTINGS_CONFLICT_PATH,
+    ...(cloudSettings ? { cloud_settings: cloudSettings } : {})
   }
 }
 
@@ -189,20 +198,26 @@ export async function resolveMobileCloudSettingsConflict(
 ): Promise<void> {
   if (choice === 'cloud') {
     const raw = await vault.fs.readTextOrNull(CLOUD_SYNC_SETTINGS_CONFLICT_PATH)
-    let parsed: unknown = null
-    if (raw !== null) {
-      try {
-        parsed = JSON.parse(raw)
-      } catch {
-        parsed = null
-      }
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const parsed = raw === null ? null : parseParkedSettings(raw)
+    if (!parsed) {
       throw new Error('The settings from the cloud could not be read, so nothing was changed.')
     }
-    await vault.setVaultSettings(parsed as Parameters<MobileVault['setVaultSettings']>[0])
+    await vault.setVaultSettings(
+      parsed as unknown as Parameters<MobileVault['setVaultSettings']>[0]
+    )
   }
   await vault.fs.deleteFile(CLOUD_SYNC_SETTINGS_CONFLICT_PATH).catch(() => {})
+}
+
+function parseParkedSettings(raw: string): Record<string, unknown> | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  return parsed as Record<string, unknown>
 }
 
 export async function listMobileCloudBackups(vault: MobileVault): Promise<CloudBackupSnapshot[]> {

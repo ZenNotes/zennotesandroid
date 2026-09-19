@@ -12,12 +12,14 @@ The app consumes the public `@zennotes/app-core`, `@zennotes/bridge-contract`,
 and `@zennotes/shared-domain` packages. The exact archives are vendored under
 `vendor/zennotes/` with their source identity and checksums (`manifest.json`),
 and `package-lock.json` pins the complete install. No source checkout is used.
-The vendored set is the published desktop release
+The vendored set is the core release
 [core-2.53.0-core.h598c8d004c9228a3](https://github.com/ZenNotes/zennotes/releases/tag/core-2.53.0-core.h598c8d004c9228a3)
-(desktop commit `3a622639`, tag v2.53.0, clean tree). Run `npm run
+(desktop commit `3a622639`, clean tree). Run `npm run
 boundaries:check` to verify archives, installed versions, singleton
 editor/React peers, and imports; it refuses an archive built from a dirty
 upstream tree unless `ZEN_ALLOW_DIRTY_CORE=1` is set for a local try-out.
+`npm run core:adopt -- <core-tag>` swaps in a new release (see "Adopting a
+core release" below).
 
 ## Architecture
 
@@ -192,11 +194,48 @@ Capacitor plugins are absent in a plain browser, so vault I/O won't work; use
 the emulator for real testing.
 
 `npm run upstream` verifies the package boundary and typechecks the host.
-To adopt a new core candidate, copy its three immutable archives into
-`vendor/zennotes/`, update the manifest and `file:` dependencies, then run
-`npm install`, the boundary check, tests, typecheck, production build, and native
-runtime checks together. Keep the previous validated package version available
-for rollback. A package update must not require private core imports.
+
+## Adopting a core release
+
+The shared packages are released on their own, without a desktop release. In
+the desktop repo, the fix lands on `main` (bumping only the three package
+versions, so `packages/app-core` can be 2.53.1 while the desktop app stays
+2.53.0), then `boundary-artifact-release.yml` runs by hand on the merge
+commit:
+
+```sh
+gh workflow run boundary-artifact-release.yml --repo ZenNotes/zennotes \
+  -f artifact=core -f source_commit=<merge sha>
+```
+
+It builds, tests and packs the three archives and creates a **draft**
+pre-release `core-<version>-core.h<hash>` with a `.tgz.json` provenance file
+per archive and `release.json`. The draft is published only after a shell has
+validated it. To adopt one here:
+
+```sh
+npm run core:adopt -- core-2.53.1-core.h0123456789abcdef   # add --dry-run to only verify
+npm run typecheck && npm test && npm run build && npm run sync
+```
+
+`tooling/adopt-core.mjs` downloads the release with an authenticated `gh`
+(drafts included), refuses it unless every archive's SHA-256 and SHA-512 match
+its provenance, the package inside each archive is the one named, all source
+commits agree (pass `--source <sha>` to pin the reviewed commit) and the build
+came from a clean tree, then swaps the archives in `vendor/zennotes/`, rewrites
+`manifest.json`, the `file:` dependencies and the README sentence above, runs
+`npm install` and the boundary check. It runs no git command; review the diff
+and stage `package.json`, `package-lock.json`, `vendor/zennotes` and
+`README.md` by path. Finish with a debug build and an emulator pass, and keep
+the previous validated set reachable in git for rollback. A package update must
+not require private core imports.
+
+To try an unreleased fix before it is released, build the candidate locally in
+the desktop checkout (`node tooling/scripts/prepare-boundary-release.mjs core
+--allow-dirty`, output under `dist/boundary-release/core-<version>/`) and
+adopt it with `ZEN_ALLOW_DIRTY_CORE=1 npm run core:adopt -- --from <that
+directory>`. Such a set is for the emulator only: the boundary check refuses
+it without the override, and it must never be committed.
 
 ## Boot-order gotcha (load-bearing)
 

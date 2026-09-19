@@ -15,6 +15,7 @@
     "upstream": "npm run boundaries:check && npm run typecheck",
     "android": "npm run build && cap sync android && cap open android",
     "boundaries:check": "node tooling/check-core-boundary.mjs",
+    "core:adopt": "node tooling/adopt-core.mjs",
     "build:boundary-fixture": "node tooling/build-native-boundary-fixture.mjs"
   },
   "dependencies": {

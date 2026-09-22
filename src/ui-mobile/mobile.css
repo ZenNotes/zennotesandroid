@@ -1265,6 +1265,19 @@
   color: rgb(var(--z-accent));
 }
 
+/* The New note form (core 2.54, the search palette's Create row) swaps the
+   search input for a header row ("New note" … "in Inbox") and three labelled
+   fields. Cancel keeps its corner, so the header's destination label ends
+   before it instead of running under it, and the fields give back the right
+   padding that was reserved for a Cancel over the search input. */
+.zn-mobile.zn-phone .z-palette [data-search-create-form] > div:first-child > div:first-child {
+  padding-right: 4.25rem;
+}
+
+.zn-mobile.zn-phone .z-palette [data-search-create-form] input {
+  padding-right: 0.625rem;
+}
+
 /* Vault text search shows a desktop "VAULT TEXT SEARCH / <backend>" caption
    under the field; on a phone the placeholder already says what it is. */
 .zn-mobile.zn-phone .z-palette [role='dialog'] div:has(> input) > div[class*='uppercase'] {

@@ -1555,6 +1555,14 @@
   display: none;
 }
 
+/* The New note form's key hints ("↑↓ pick", "↵ create", "esc back", and the
+   "Shift+↵" chip in its Open it button). Its footer also holds Back and
+   Create, so the palette-footer rule above must not match it; the core marks
+   the hints themselves instead (ZenNotes/zennotes#842). */
+.zn-mobile.zn-phone .z-palette [data-keyboard-hints] {
+  display: none;
+}
+
 /* iOS-style back chevron injected at the start of the note header
    (useHeaderBackButton) — navigation lives here, not in the FAB dial. */
 .zn-phone .zn-header-back {

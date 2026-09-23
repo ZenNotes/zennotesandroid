@@ -1,7 +1,7 @@
 {
   "name": "zennotes-android",
   "private": true,
-  "version": "1.1.25",
+  "version": "1.1.26",
   "type": "module",
   "description": "ZenNotes for Android — Capacitor shell over the ZenNotes app core",
   "homepage": "https://zennotes.org",
@@ -39,9 +39,13 @@
     "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.5",
     "@codemirror/view": "^6.43.12",
+    "@lezer/common": "^1.5.2",
     "@lezer/highlight": "^1.2.1",
     "@replit/codemirror-vim": "^6.3.0",
     "@xyflow/react": "^12.11.6",
+    "@zennotes/app-core": "file:vendor/zennotes/zennotes-app-core-2.55.0-core.h0743bd3af2a4204a.tgz",
+    "@zennotes/bridge-contract": "file:vendor/zennotes/zennotes-bridge-contract-2.55.0-boundaries.hd2f617179eb16ef2.tgz",
+    "@zennotes/shared-domain": "file:vendor/zennotes/zennotes-shared-domain-2.55.0-boundaries.hd2f617179eb16ef2.tgz",
     "codemirror": "^6.0.1",
     "dompurify": "^3.4.15",
     "function-plot": "^1.25.3",
@@ -66,11 +70,7 @@
     "unist-util-visit": "^5.0.0",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2",
-    "zustand": "^5.0.2",
-    "@zennotes/app-core": "file:vendor/zennotes/zennotes-app-core-2.54.1-core.h75d82a521571dc20.tgz",
-    "@zennotes/bridge-contract": "file:vendor/zennotes/zennotes-bridge-contract-2.54.1-boundaries.h1138e41f8e2ad650.tgz",
-    "@zennotes/shared-domain": "file:vendor/zennotes/zennotes-shared-domain-2.54.1-boundaries.h1138e41f8e2ad650.tgz",
-    "@lezer/common": "^1.5.2"
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",
@@ -79,12 +79,12 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.6.1",
+    "esbuild": "^0.28.2",
     "harper.js": "^2.10.0",
     "postcss": "^8.5.28",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^8.3.0",
-    "esbuild": "^0.28.2"
+    "vite": "^8.3.0"
   },
   "overrides": {
     "xcode": {

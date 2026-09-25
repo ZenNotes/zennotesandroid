@@ -428,12 +428,25 @@ export async function listVaultDirs(): Promise<{ name: string; mtime: number }[]
  * folder name, the way desktop's describeVault does.
  */
 export async function readVaultDisplayName(vaultName: string): Promise<string | null> {
+  return readDisplayNameFrom({
+    path: `${VAULTS_DIR}/${vaultName}/.zennotes/vault.json`,
+    directory: vaultsRoot()
+  })
+}
+
+/**
+ * The same for a vault addressed by a file URL, which is how the cloud tier
+ * lists its vaults (see looksLikeVaultDir). One read attempt, no download
+ * wait: an evicted vault.json answers null and the vault keeps its folder
+ * name in the switcher, rather than every listing waiting on the cloud.
+ */
+export async function readVaultDisplayNameAtUrl(url: string): Promise<string | null> {
+  return readDisplayNameFrom({ path: `${url}/.zennotes/vault.json` })
+}
+
+async function readDisplayNameFrom(loc: { path: string; directory?: Directory }): Promise<string | null> {
   try {
-    const res = await Filesystem.readFile({
-      path: `${VAULTS_DIR}/${vaultName}/.zennotes/vault.json`,
-      directory: vaultsRoot(),
-      encoding: Encoding.UTF8
-    })
+    const res = await Filesystem.readFile({ ...loc, encoding: Encoding.UTF8 })
     const parsed: unknown = JSON.parse(typeof res.data === 'string' ? res.data : '')
     const name = (parsed as { displayName?: unknown } | null)?.displayName
     return typeof name === 'string' ? name : null

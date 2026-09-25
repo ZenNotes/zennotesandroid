@@ -39,7 +39,7 @@ import type {
   VaultTextSearchMatch
 } from '@zennotes/shared-domain/ipc'
 import { createDatabaseOps } from '@zennotes/shared-domain/database-ops'
-import { resolveVaultName } from '@zennotes/shared-domain/vault-display-name'
+import { normalizeVaultDisplayName, resolveVaultName } from '@zennotes/shared-domain/vault-display-name'
 import type {
   CustomCodeLanguage,
   CustomCodeLanguageInstallInput,
@@ -62,6 +62,7 @@ import { MobileVault } from './vault-fs'
 import {
   listVaultDirs,
   readVaultDisplayName,
+  readVaultDisplayNameAtUrl,
   VAULTS_DIR,
   vaultsRoot,
   initVaultsRoot
@@ -182,7 +183,12 @@ export function currentExternalVaultRoot(): string | null {
 
 export interface MobileVaultEntry {
   root: string
+  /** The folder's name on disk: what rename and delete act on, and what the
+   *  open vault's `folderName` is compared with to mark it current. */
   name: string
+  /** The name the vault goes by when its vault.json carries one (ZenNotes
+   *  #692), normalized; the sheet shows it in place of the folder name. */
+  displayName?: string
   tier: 'local' | 'icloud' | 'external'
 }
 
@@ -226,17 +232,25 @@ async function looksLikeVaultDir(url: string): Promise<boolean> {
 export async function listSwitchableVaults(): Promise<MobileVaultEntry[]> {
   const out: MobileVaultEntry[] = []
   for (const d of await listVaultDirs()) {
-    out.push({ root: `${VAULT_ROOT_PREFIX}${d.name}`, name: d.name, tier: 'local' })
+    const displayName = normalizeVaultDisplayName(await readVaultDisplayName(d.name))
+    out.push({
+      root: `${VAULT_ROOT_PREFIX}${d.name}`,
+      name: d.name,
+      tier: 'local',
+      ...(displayName ? { displayName } : {})
+    })
   }
   const status = await icloudStatus().catch(() => null)
   if (status?.available && status.rootUrl) {
     for (const name of filterCloudVaultNames(status.vaults ?? [])) {
       const url = `${status.rootUrl}/${encodeURIComponent(name)}`
       if (!(await looksLikeVaultDir(url))) continue
+      const displayName = normalizeVaultDisplayName(await readVaultDisplayNameAtUrl(url))
       out.push({
         root: `${ICLOUD_VAULT_ROOT_PREFIX}${encodeURIComponent(name)}`,
         name,
-        tier: 'icloud'
+        tier: 'icloud',
+        ...(displayName ? { displayName } : {})
       })
     }
   }
@@ -458,6 +472,18 @@ function currentVaultInfo(): VaultInfo | null {
  * open, and a vault whose vault.json cannot be read keeps its folder name,
  * the way it always did.
  */
+/**
+ * The open local vault's folder name, null in a remote workspace or before
+ * boot. The Vaults sheet lists folders and must mark the one that is open
+ * whatever the vault is called (rename and delete act on the folder), and
+ * the core's shell snapshot carries the vault's shown name, not its folder,
+ * so the sheet asks the bridge, which holds the MobileVault by folder name.
+ */
+export function currentVaultFolderName(): string | null {
+  if (remoteVaultInfo()) return null
+  return vault?.name ?? null
+}
+
 async function describeCurrentVault(): Promise<VaultInfo | null> {
   const info = currentVaultInfo()
   if (!info || remoteVaultInfo() || !vault) return info

@@ -32,6 +32,7 @@ import { getStoragePref } from '../bridge/icloud'
 import {
   ICLOUD_VAULT_ROOT_PREFIX,
   VAULT_ROOT_PREFIX,
+  currentVaultFolderName,
   listSwitchableVaults,
   renameVault,
   deleteVault,
@@ -280,7 +281,14 @@ const TIER_SECTIONS = [
 ] as const
 
 export function VaultsSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const currentName = useShellSnapshot().vault?.name ?? null
+  // The open vault is matched by its folder name, which is what an entry's
+  // `name` is: rename and delete act on the folder, so the guards below must
+  // hold for the folder that is open whatever the vault is called. The
+  // bridge names the folder; the snapshot's vault name is the display name
+  // (ZenNotes #692), which is what the rows show: the snapshot's for the
+  // open vault (the shell resolves it) and each entry's for the others.
+  const currentDisplayName = useShellSnapshot().vault?.name ?? null
+  const currentFolder = currentVaultFolderName()
   const { mode: workspaceMode, remoteProfileId, remoteProfiles } = useWorkspaceSnapshot()
   const [entries, setEntries] = useState<MobileVaultEntry[] | null>(null)
   const [view, setView] = useState<ManagerView>({ kind: 'list' })
@@ -305,9 +313,11 @@ export function VaultsSheet({ onClose }: { onClose: () => void }): React.JSX.Ele
   const currentTier = workspaceMode === 'remote' ? 'remote' : getStoragePref()
   const isCurrent = (e: MobileVaultEntry): boolean =>
     currentTier === e.tier &&
-    e.name === currentName &&
-    // Picked folders may share a display name — the root token decides.
+    e.name === currentFolder &&
+    // Picked folders may share a folder name: the root token decides.
     (e.tier !== 'external' || e.root === currentExternalVaultRoot())
+  const shownName = (e: MobileVaultEntry): string =>
+    (isCurrent(e) ? currentDisplayName : null) ?? e.displayName ?? e.name
 
   /** Switch flows close the sheet and drawer on success. */
   const act = (key: string, fn: () => Promise<unknown>): void => {
@@ -433,13 +443,13 @@ export function VaultsSheet({ onClose }: { onClose: () => void }): React.JSX.Ele
                                 )
                               }
                             >
-                              <span className="zn-truncate">{entry.name}</span>
+                              <span className="zn-truncate">{shownName(entry)}</span>
                               {current && <span className="zn-mobile-sheet-row-check">✓</span>}
                             </button>
                             <button
                               type="button"
                               className="zn-mobile-sheet-row-more"
-                              aria-label={`Manage ${entry.name}`}
+                              aria-label={`Manage ${shownName(entry)}`}
                               onClick={() => {
                                 setError('')
                                 setView({ kind: 'vault', entry })
@@ -523,7 +533,8 @@ export function VaultsSheet({ onClose }: { onClose: () => void }): React.JSX.Ele
             <>
               {backRow}
               <p className="zn-mobile-sheet-note">
-                “{view.entry.name}” —{' '}
+                “{shownName(view.entry)}”
+                {shownName(view.entry) !== view.entry.name ? ` (folder ${view.entry.name})` : ''},{' '}
                 {view.entry.tier === 'icloud'
                   ? 'iCloud Drive'
                   : view.entry.tier === 'external'

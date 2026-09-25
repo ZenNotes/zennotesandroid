@@ -108,3 +108,20 @@ test('native absent-file reads propagate provider failures instead of allowing s
   const permission = new Error('Permission denied')
   await assert.rejects(NativeFs.prototype.readTextOrNull.call({ readText: async () => { throw permission } }, 'schema.json'), permission)
 })
+// ZenNotes #692: the desktop writes the vault's display name into vault.json.
+// The phone's settings pass every key through, so a save from this device
+// (toggling a favorite is enough) must keep the name, and a read must hand
+// it to the core, which names the vault by it.
+test('a vault display name written by desktop survives a phone settings save (ZenNotes #692)', async () => {
+  const { fs, vault } = fixture()
+  fs.files.set('.zennotes/vault.json', JSON.stringify({
+    ...structuredClone(DEFAULT_VAULT_SETTINGS), displayName: 'Acme API docs'
+  }))
+  Object.assign(vault, { settingsCache: null })
+  const settings = await vault.getVaultSettings()
+  assert.equal(settings.displayName, 'Acme API docs')
+  await vault.setVaultSettings({ ...settings, favorites: ['Notes/Work/One.md'] })
+  const written = JSON.parse(fs.files.get('.zennotes/vault.json')!)
+  assert.equal(written.displayName, 'Acme API docs')
+  assert.deepEqual(written.favorites, ['Notes/Work/One.md'])
+})

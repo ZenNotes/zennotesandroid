@@ -13,8 +13,8 @@ and `@zennotes/shared-domain` packages. The exact archives are vendored under
 `vendor/zennotes/` with their source identity and checksums (`manifest.json`),
 and `package-lock.json` pins the complete install. No source checkout is used.
 The vendored set is the core release
-[core-2.55.0-core.h0743bd3af2a4204a](https://github.com/ZenNotes/zennotes/releases/tag/core-2.55.0-core.h0743bd3af2a4204a)
-(desktop commit `00db7036`, clean tree). Run `npm run
+[core-2.56.1-core.hc872c08b6872aec4](https://github.com/ZenNotes/zennotes/releases/tag/core-2.56.1-core.hc872c08b6872aec4)
+(desktop commit `f8b24c09`, clean tree). Run `npm run
 boundaries:check` to verify archives, installed versions, singleton
 editor/React peers, and imports; it refuses an archive built from a dirty
 upstream tree unless `ZEN_ALLOW_DIRTY_CORE=1` is set for a local try-out.

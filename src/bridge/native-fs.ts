@@ -420,6 +420,28 @@ export async function listVaultDirs(): Promise<{ name: string; mtime: number }[]
   }
 }
 
+/**
+ * The raw `displayName` a local vault carries in its own vault.json
+ * (ZenNotes #692), or null when the vault has none or the file cannot be
+ * read. For the vault switcher, which lists vaults that are not open and so
+ * have no MobileVault to ask; the caller normalizes and falls back to the
+ * folder name, the way desktop's describeVault does.
+ */
+export async function readVaultDisplayName(vaultName: string): Promise<string | null> {
+  try {
+    const res = await Filesystem.readFile({
+      path: `${VAULTS_DIR}/${vaultName}/.zennotes/vault.json`,
+      directory: vaultsRoot(),
+      encoding: Encoding.UTF8
+    })
+    const parsed: unknown = JSON.parse(typeof res.data === 'string' ? res.data : '')
+    const name = (parsed as { displayName?: unknown } | null)?.displayName
+    return typeof name === 'string' ? name : null
+  } catch {
+    return null
+  }
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = ''
   const chunkSize = 32_768

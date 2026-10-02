@@ -323,7 +323,7 @@ function hostVault(vault: MobileVault, cacheScan = false): CloudSyncHostVault {
     writeBase64: (path, value) => vault.fs.writeBase64(path, value),
     deleteFile: (path) => vault.fs.deleteFile(path),
     rename: async (from, to) => {
-      const parent = to.slice(0, to.lastIndexOf('/'))
+      const parent = to.includes('/') ? to.slice(0, to.lastIndexOf('/')) : ''
       if (parent) await vault.fs.mkdir(parent)
       await vault.fs.rename(from, to)
     }

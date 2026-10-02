@@ -25,6 +25,7 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
   const revisions = new Map<string, CloudSyncManifestItem>()
   const feed: CloudSyncChange[] = []
   const reads: string[] = []
+  const createdDirectories: string[] = []
   const refreshes: Record<string, string>[] = []
   const uploaded: CloudSyncMutation[] = []
   const manifestRequests: unknown[] = []
@@ -147,7 +148,7 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
       if (path === failWritePath) throw new Error('Native write failed after writing')
     },
     async deleteFile(path: string) { files.delete(path) },
-    async mkdir(_path: string) {},
+    async mkdir(path: string) { createdDirectories.push(path) },
     async rename(from: string, to: string) {
       const file = files.get(from)
       assert.ok(file)
@@ -186,7 +187,7 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
   await api.linkMobileCloudVault(vault, 'vault-1')
   const stateKey = () => [...persisted.keys()].find((path) => path.includes('/states/'))
   return {
-    api, vault, files, reads, uploaded, refreshes, remoteText, put, manifestRequests, remote, persisted,
+    api, vault, files, reads, uploaded, refreshes, remoteText, put, manifestRequests, remote, persisted, createdDirectories,
     setAccountStatus: (value: typeof accountStatus) => { accountStatus = value },
     sync: () => api.syncMobileCloudVault(vault),
     setFailWrite: (path: string | null) => { failWritePath = path },
@@ -206,6 +207,19 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
 }
 
 describe('mobile Cloud adapter wiring', () => {
+  for (const [path, directories] of [
+    ['Welcome.md', []],
+    ['notes/Welcome.md', ['notes']]
+  ] as const) {
+    it(`creates only actual parent directories when pulling ${path}`, async () => {
+      const h = await fixture({})
+      h.remoteText(path, 'Content from desktop')
+      await h.sync()
+      assert.equal(h.files.get(path)?.bytes.toString(), 'Content from desktop')
+      assert.deepEqual(h.createdDirectories, directories)
+    })
+  }
+
   it('detects remote changes from a one-item metadata manifest without scanning local files', async () => {
     const h = await fixture()
     assert.equal(await h.api.hasMobileCloudVaultChanges(h.vault), true)

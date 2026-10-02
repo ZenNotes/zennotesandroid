@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.provider.DocumentsContract;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
@@ -35,8 +36,19 @@ public class SafFixtureProvider extends ContentProvider {
     }
     @Override public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
         String id = DocumentsContract.getDocumentId(uri);
-        if (!id.equals("present")) throw new FileNotFoundException("Provider cannot open this document");
+        if (!id.equals("present") && !id.equals("large")) throw new FileNotFoundException("Provider cannot open this document");
         try {
+            if (id.equals("large")) {
+                File large = new File(getContext().getCacheDir(), "saf-capacity-fixture.bin");
+                try (FileOutputStream output = new FileOutputStream(large)) {
+                    byte[] chunk = new byte[64 * 1024];
+                    java.util.Arrays.fill(chunk, (byte) 197);
+                    for (int left = 6_000_000; left > 0; left -= Math.min(left, chunk.length)) {
+                        output.write(chunk, 0, Math.min(left, chunk.length));
+                    }
+                }
+                return ParcelFileDescriptor.open(large, ParcelFileDescriptor.MODE_READ_ONLY);
+            }
             File file = new File(getContext().getCacheDir(), "saf-fixture.md");
             Files.write(file.toPath(), "Exact café 日本語.  \n".getBytes(StandardCharsets.UTF_8));
             return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);

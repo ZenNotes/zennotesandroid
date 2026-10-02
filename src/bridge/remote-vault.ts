@@ -35,7 +35,8 @@ import type { ImportedAsset } from '@zennotes/shared-domain/ipc'
 import { createAbsenceAwareReader } from '@zennotes/shared-domain/remote-absence'
 import { pastedImageFilename } from '@zennotes/shared-domain/pasted-image'
 import { emitVaultChange } from './events'
-import { importedAssetFilename } from './imported-assets'
+import { importedAssetFilename, importedAssetMarkdown } from './imported-assets'
+import { classifyImportedAsset } from './vault-core'
 import { RemoteClient, RemoteRequestError } from './remote-client'
 
 function remoteOnly(what: string): never {
@@ -353,13 +354,14 @@ export class RemoteVault {
       bytesToBase64(bytes),
       'assets'
     )
-    const isImage = /\.(png|jpe?g|gif|webp|svg|heic)$/i.test(meta.name)
+    // The same rule as a local vault, so a remote vault embeds a video too.
+    const kind = classifyImportedAsset(meta.name)
     emitVaultChange({ kind: 'add', path: meta.path, folder: 'inbox', scope: 'content' })
     return {
       name: meta.name,
       path: meta.path,
-      markdown: isImage ? `![[${meta.path}]]` : `[${meta.name}](<${meta.path}>)`,
-      kind: isImage ? 'image' : 'file'
+      markdown: importedAssetMarkdown(meta.path, meta.name, kind),
+      kind
     }
   }
 

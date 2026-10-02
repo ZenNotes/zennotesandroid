@@ -1,12 +1,12 @@
 {
   "name": "@zennotes/app-core",
-  "version": "2.60.3-core.h44232ae9fc126112",
-  "file": "zennotes-app-core-2.60.3-core.h44232ae9fc126112.tgz",
-  "sha256": "d2150448992be71b60df5b63b8f56b6df8e6f4cb24aed68327c20274f45ead4f",
-  "integrity": "sha512-7F/EEgj8AOF0Mx6rupO2h6jc35jbei5Hq2fI6SX1lOQkM32dPeNCz3M3Izm873h8kUHHOD4ubMF/x6fPWgiqDw==",
-  "sourceCommit": "e5e34f84d4a7b3eaaa4ac319f9bfb2a5a0cb6656",
+  "version": "2.60.4-core.hae0e49f9e5397fc2",
+  "file": "zennotes-app-core-2.60.4-core.hae0e49f9e5397fc2.tgz",
+  "sha256": "ab27e3c8457b5fbdb892614dd20e83c103fd814cdf2d06be0bffe6459df91ff3",
+  "integrity": "sha512-myfhQXcnJYLP0UNxYwYeyYtrPSXqWgA5zdK9CwVGJDl47GZWFjz9BOIzhbMUk4QkiJ0Pude1rtfDBOLMdAXNWQ==",
+  "sourceCommit": "c507caa30492be7a6f8d00c0d67c1af47228056c",
   "workingTreeDirty": false,
-  "sourceLockSha256": "4f380efe2f52708bb3062b25751fb5a5207427865e88ae2e494b4f9a54c9c615",
+  "sourceLockSha256": "03925b7e9e3ffc1220e90d25fffd3f67f6f73a6badd8df97909b06b80785a7cf",
   "toolchain": {
     "node": "v22.23.3",
     "typescript": "5.9.3",
@@ -15,20 +15,20 @@
   "dependencies": [
     {
       "name": "@zennotes/bridge-contract",
-      "version": "2.60.3-boundaries.he9b8fc8befc70b6e",
-      "file": "zennotes-bridge-contract-2.60.3-boundaries.he9b8fc8befc70b6e.tgz",
-      "sha256": "b5cab06655bcf3f2a85b57131fc6e2bdb4e312ca6d7c4b6b8f9edf4093b0055c",
-      "integrity": "sha512-XfD+CutriaT/o/Zp3ftuLH9MYZbbjI57gxGuL7s9ncXp28If/8SKFIuB3+0Cqzf6UxPxazPc/Mi2lmg6qU3sMQ==",
-      "sourceCommit": "e5e34f84d4a7b3eaaa4ac319f9bfb2a5a0cb6656",
+      "version": "2.60.4-boundaries.h787dd8dec256d6bf",
+      "file": "zennotes-bridge-contract-2.60.4-boundaries.h787dd8dec256d6bf.tgz",
+      "sha256": "4f03249745beb429f47075147f1d8c3a3b73b47e58f1c6525aa50736e480f351",
+      "integrity": "sha512-Qw3LkQ14AzebK1gwjtEOajEaOPjRmaQ9Ku/JQkiQx5oHOVT3wT36MYb8jN1S+ro8aF6/oH48xnFLt+qMZAseZA==",
+      "sourceCommit": "c507caa30492be7a6f8d00c0d67c1af47228056c",
       "workingTreeDirty": false
     },
     {
       "name": "@zennotes/shared-domain",
-      "version": "2.60.3-boundaries.he9b8fc8befc70b6e",
-      "file": "zennotes-shared-domain-2.60.3-boundaries.he9b8fc8befc70b6e.tgz",
-      "sha256": "3dd1430c5bfe384ea77fd03475e829acb5131658f730c63bb81a909146e6173b",
-      "integrity": "sha512-vLG6OYNc3bxfaGZAp5VxkliaHKFFEBGgYTUMi89lEOSFQjpyn9dit/vIZR4I1SUDT52eRAwKAIPeEvDgfKv16g==",
-      "sourceCommit": "e5e34f84d4a7b3eaaa4ac319f9bfb2a5a0cb6656",
+      "version": "2.60.4-boundaries.h787dd8dec256d6bf",
+      "file": "zennotes-shared-domain-2.60.4-boundaries.h787dd8dec256d6bf.tgz",
+      "sha256": "185fc9fba85c8ceaf6c49de7cd4324857e470cdbacf9a3bf4e1c447330c1da74",
+      "integrity": "sha512-f5luMeQt4S8b2BD43yzoFpQSdWbve31n23DBGcNmfF89qxiKsLU/Mm+XaZOHRWraPCOSdYiBUb3qn3sVu9b+Sg==",
+      "sourceCommit": "c507caa30492be7a6f8d00c0d67c1af47228056c",
       "workingTreeDirty": false
     }
   ]

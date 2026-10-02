@@ -5,6 +5,8 @@ import type {
   CloudBackupRestoreResult,
   CloudBackupSchedule,
   CloudBackupSnapshot,
+  CloudBackupItemsPage,
+  CloudBackupItemsQuery,
   CloudBackupSnapshotItem,
   CloudSyncRunSummary,
   CloudSyncPendingConflictDetails,
@@ -244,6 +246,16 @@ export async function listMobileCloudBackupItems(
   return service.listBackupItems(hostVault(vault), backupId)
 }
 
+/** One page of a backup's notes, searched by path on the service, so the
+ *  backup browser can reach notes past the first 50. */
+export async function listMobileCloudBackupItemsPage(
+  vault: MobileVault,
+  backupId: string,
+  query: CloudBackupItemsQuery
+): Promise<CloudBackupItemsPage> {
+  return service.listBackupItemsPage(hostVault(vault), backupId, query)
+}
+
 export async function createMobileCloudBackup(
   vault: MobileVault,
   label?: string
@@ -323,7 +335,7 @@ function hostVault(vault: MobileVault, cacheScan = false): CloudSyncHostVault {
     writeBase64: (path, value) => vault.fs.writeBase64(path, value),
     deleteFile: (path) => vault.fs.deleteFile(path),
     rename: async (from, to) => {
-      const parent = to.slice(0, to.lastIndexOf('/'))
+      const parent = to.includes('/') ? to.slice(0, to.lastIndexOf('/')) : ''
       if (parent) await vault.fs.mkdir(parent)
       await vault.fs.rename(from, to)
     }

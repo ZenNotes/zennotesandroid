@@ -128,6 +128,16 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
       assert.ok(file)
       return file.bytes.toString('base64')
     },
+    async readForSync(path: string, textCandidate: boolean) {
+      reads.push(path)
+      const file = files.get(path)
+      assert.ok(file)
+      return {
+        uri: `file:///vault/${path}`, byteLength: file.bytes.length,
+        sha256: createHash('sha256').update(file.bytes).digest('hex'), utf8: textCandidate,
+        inlineBase64: file.bytes.toString('base64')
+      }
+    },
     async writeText(path: string, data: string) {
       put(path, data)
       if (path === failWritePath) throw new Error('Native write failed after writing')
@@ -143,6 +153,7 @@ async function fixture(initial: Record<string, string> = { 'note.md': 'Original'
       assert.ok(file)
       files.set(to, file)
       files.delete(from)
+      if (to === failWritePath) throw new Error('Native write failed after publishing')
     }
   }
   const vault = {
@@ -272,7 +283,7 @@ describe('mobile Cloud adapter wiring', () => {
     if (uploaded?.type === 'upsert') assert.equal(uploaded.content.data, 'Local changes')
   })
 
-  it('exposes partial native writes when a pull fails, and can retry safely', async () => {
+  it('rolls back a partial native publish while preserving earlier completed pulls', async () => {
     const h = await fixture()
     await h.sync()
     h.refreshes.length = 0
@@ -280,7 +291,8 @@ describe('mobile Cloud adapter wiring', () => {
     h.remoteText('second.md', 'Partially written')
     h.setFailWrite('second.md')
     await assert.rejects(h.sync(), /Native write failed/)
-    assert.deepEqual(h.refreshes, [{ 'note.md': 'Remote update', 'second.md': 'Partially written' }])
+    assert.deepEqual(h.refreshes, [{ 'note.md': 'Remote update' }])
+    assert.equal(h.files.has('second.md'), false)
     h.setFailWrite(null)
     await h.sync()
     assert.equal(h.files.get('note.md')?.bytes.toString(), 'Remote update')

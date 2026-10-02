@@ -12,6 +12,10 @@ const account = {
 const credential = JSON.stringify({ base_url: account.base_url, token: 'test-only', account })
 
 async function coldLaunch(saved: Map<string, string>) {
+  const lifecycle: string[] = []
+  const listeners = new Map<string, (event: any) => void>()
+  let lifetime = new AbortController()
+  let delayRead: { entered(): void; wait: Promise<void> } | null = null
   // Exercise the real Capacitor lazy proxy: concurrent first calls can
   // instantiate separate implementations, each with its own key prefix.
   const secureStorage = registerPlugin(`TestCloudStorage${randomUUID()}`, {
@@ -22,7 +26,16 @@ async function coldLaunch(saved: Map<string, string>) {
         async setKeyPrefix(prefix: string) { this.prefix = prefix }
         async setSynchronize(_value: boolean) {}
         async setDefaultKeychainAccess(_value: unknown) {}
-        async getItem(key: string) { return saved.get(this.prefix + key) ?? null }
+        async getItem(key: string) {
+          const value = saved.get(this.prefix + key) ?? null
+          if (key === 'credential' && delayRead) {
+            const delayed = delayRead
+            delayRead = null
+            delayed.entered()
+            await delayed.wait
+          }
+          return value
+        }
         async setItem(key: string, value: string) { saved.set(this.prefix + key, value) }
         async removeItem(key: string) { saved.delete(this.prefix + key) }
       }()
@@ -30,14 +43,32 @@ async function coldLaunch(saved: Map<string, string>) {
   })
   const api = await loadMobileModule('./src/bridge/mobile-cloud-auth.ts', {
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true }, CapacitorHttp: {} },
-    '@capacitor/app': { App: { addListener: async () => ({}), getLaunchUrl: async () => null } },
+    '@capacitor/app': { App: { addListener: async (name: string, listener: (event: any) => void) => {
+      listeners.set(name, listener)
+      return {}
+    }, getLaunchUrl: async () => null } },
     '@aparajita/capacitor-secure-storage': {
       SecureStorage: secureStorage,
       KeychainAccess: { whenUnlockedThisDeviceOnly: 'device-only' }
     },
-    './cloud-sync-client': { createCloudSyncClient: () => assert.fail('status must only read storage') }
+    './cloud-sync-client': {
+      createCloudSyncClient: () => assert.fail('status must only read storage'),
+      stopMobileCloudRequests: () => { lifecycle.push('stop'); lifetime.abort() },
+      resumeMobileCloudRequests: () => { lifecycle.push('resume'); if (lifetime.signal.aborted) lifetime = new AbortController() },
+      mobileCloudRequestSignal: () => lifetime.signal
+    }
   })
   await api.configureMobileCloudAuth('test-version')
+  api.lifecycle = lifecycle
+  api.appState = (isActive: boolean) => listeners.get('appStateChange')!({ isActive })
+  api.pauseNextCredentialRead = () => {
+    let entered!: () => void
+    let release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const wait = new Promise<void>(resolve => { release = resolve })
+    delayRead = { entered, wait }
+    return { started, release }
+  }
   return api
 }
 
@@ -61,8 +92,30 @@ it('preserves the canonical account and prevents a legacy credential from return
   const api = await coldLaunch(saved)
   assert.equal((await api.authenticatedCredential()).token, 'test-only')
   await api.logoutMobileCloudAccount()
+  assert.ok(api.lifecycle.includes('stop'))
   assert.equal(saved.size, 0)
   assert.deepEqual(await (await coldLaunch(saved)).getMobileCloudAccountStatus(), { state: 'disconnected', account: null })
+})
+
+it('stops pending Cloud requests in the background and resumes on foreground', async () => {
+  const api = await coldLaunch(new Map([['zennotes.cloud.credential', credential]]))
+  api.appState(false)
+  api.appState(true)
+  assert.deepEqual(api.lifecycle, ['stop', 'resume'])
+})
+
+it('rejects a credential read spanning logout even after foreground creates a new lifetime', async () => {
+  const saved = new Map([['zennotes.cloud.credential', credential]])
+  const api = await coldLaunch(saved)
+  await api.getMobileCloudAccountStatus()
+  const paused = api.pauseNextCredentialRead()
+  const pending = api.authenticatedClient().catch((error: unknown) => error)
+  await paused.started
+  await api.logoutMobileCloudAccount()
+  api.appState(true)
+  paused.release()
+  assert.equal((await pending).name, 'AbortError')
+  assert.equal(saved.size, 0)
 })
 
 it('rejects invalid recovered credentials through the shared auth validator', async () => {

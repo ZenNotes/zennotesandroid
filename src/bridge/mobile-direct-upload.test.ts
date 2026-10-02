@@ -15,6 +15,30 @@ import {
 } from './mobile-direct-upload.ts'
 
 describe('mutateWithMobileDirectUploads', () => {
+  it('adds a content type to host-only signed uploads so Android writes the binary body', () => {
+    const headers = { Host: 'objects.example.test' }
+    const options = mobileObjectUploadOptions({
+      url: 'https://objects.example.test/upload',
+      method: 'PUT',
+      headers,
+      base64: 'AQID',
+      byteLength: 3
+    })
+    assert.equal(options.headers['Content-Type'], 'application/octet-stream')
+    assert.deepEqual(headers, { Host: 'objects.example.test' })
+  })
+
+  it('preserves an existing signed content type regardless of casing', () => {
+    const options = mobileObjectUploadOptions({
+      url: 'https://objects.example.test/upload',
+      method: 'PUT',
+      headers: { 'content-type': 'image/png' },
+      base64: 'AQID',
+      byteLength: 3
+    })
+    assert.deepEqual(options.headers, { 'content-type': 'image/png' })
+  })
+
   it('builds a native binary PUT without an account bearer token or redirects', () => {
     const options = mobileObjectUploadOptions({
       url: 'https://objects.example.test/upload?signature=signed',

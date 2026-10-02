@@ -37,6 +37,9 @@ import {
 import type { CloudSyncLocalItem, CloudSyncState } from '@zennotes/shared-domain/cloud-sync-engine'
 import type { NativeFs } from './native-fs'
 import { cloudSyncWorkBudget, decodeCloudSyncBase64 } from './cloud-sync-work'
+import { CLOUD_SYNC_INLINE_UPLOAD_LIMIT_BYTES, rememberMobileUploadSource } from './mobile-direct-upload'
+import { isNotFoundError } from './fs-errors'
+import { NativeCloudStaging, type CloudStagingNative } from './cloud-sync-staging'
 
 export interface ScanCacheEntry {
   mtime: number
@@ -49,6 +52,8 @@ export interface ScanCacheEntry {
 
 export type ScanCache = Record<string, ScanCacheEntry>
 
+type CloudSyncNativeFiles = Pick<NativeFs, 'readdirStrict' | 'readForSync' | 'statOrNull' | 'copyForSync'> & Partial<CloudStagingNative>
+
 export interface ScanCacheStore {
   loadTracked(): Promise<CloudSyncState | null>
   loadCache(): Promise<unknown>
@@ -56,16 +61,51 @@ export interface ScanCacheStore {
 }
 
 export class CachedCloudSyncRepository extends PortableCloudSyncRepository {
+  private readonly contentFiles: NativeCloudSyncContent
+
   constructor(
     fs: PortableCloudSyncFileSystem,
-    private readonly native: Pick<NativeFs, 'readdirStrict' | 'readBase64' | 'statOrNull'>,
+    private readonly native: CloudSyncNativeFiles,
     private readonly store: ScanCacheStore,
     private readonly onChanged: () => void = () => {}
   ) {
-    super(fs)
+    const contentFiles = new NativeCloudSyncContent(fs, native)
+    const staging = isStagingNative(native)
+      ? new NativeCloudStaging(native, (path) => TEXT_EXTENSIONS.has(extension(path)), (path) => contentFiles.read(path))
+      : null
+    const sourceAwareFs = {
+      ...(staging ? {
+        stageCloudContent: async (source: Parameters<NativeCloudStaging['stage']>[0]) => {
+          await contentFiles.assertReady(true)
+          return staging.stage(source)
+        },
+        applyStagedCloudContent: (...args: Parameters<NativeCloudStaging['apply']>) => staging.apply(...args),
+        resolveStagedCloudConflict: (input: Parameters<NativeCloudStaging['resolve']>[0]) => staging.resolve(input)
+      } : {}),
+      readdir: (path: string) => fs.readdir(path),
+      stat: (path: string) => fs.stat(path),
+      readBase64: (path: string) => fs.readBase64(path),
+      writeText: (path: string, value: string) => fs.writeText(path, value),
+      writeBase64: (path: string, value: string) => fs.writeBase64(path, value),
+      deleteFile: (path: string) => fs.deleteFile(path),
+      rename: (from: string, to: string) => fs.rename(from, to),
+      readItem: (path: string) => contentFiles.read(path),
+      validateContent: (content: CloudSyncContent) => contentFiles.validate(content),
+      writeContent: (path: string, content: CloudSyncContent) => contentFiles.write(path, content)
+    }
+    super(sourceAwareFs)
+    this.contentFiles = contentFiles
+    this.staging = staging
+  }
+
+  private readonly staging: NativeCloudStaging | null
+
+  override async matchesCloudContent(path: string, reference: Parameters<NativeCloudStaging['matches']>[1]): Promise<boolean> {
+    return this.staging ? this.staging.matches(path, reference) : super.matchesCloudContent(path, reference)
   }
 
   override async scan(): Promise<CloudSyncLocalItem[]> {
+    await this.contentFiles.assertReady(true)
     const trackedSha = trackedShaByPath(await this.store.loadTracked().catch(() => null))
     const cache = normalizeScanCache(await this.store.loadCache().catch(() => null))
     const nextCache: ScanCache = {}
@@ -113,7 +153,7 @@ export class CachedCloudSyncRepository extends PortableCloudSyncRepository {
         continue
       }
 
-      const item = await this.readItemFresh(path)
+      const item = await this.readItemFresh(path, entry.uri)
       if (!cached || cached.mtime !== entry.mtime || cached.size !== entry.size || cached.sha256 !== item.content.sha256) {
         this.onChanged()
       }
@@ -135,12 +175,53 @@ export class CachedCloudSyncRepository extends PortableCloudSyncRepository {
   }
 
   // ---------------------------------------------------------------------
-  // Preserve upstream readItem's encoding/hash semantics while yielding
-  // during large base64 decoding and avoiding a binary re-encode.
+  // Only inline-sized bodies cross the native bridge. Large files retain a
+  // host-only source reference, like the desktop's disk-backed uploader.
   // ---------------------------------------------------------------------
 
-  private async readItemFresh(path: string): Promise<CloudSyncLocalItem> {
-    const { bytes, base64 } = await decodeCloudSyncBase64(await this.native.readBase64(path))
+  private async readItemFresh(path: string, uri?: string): Promise<CloudSyncLocalItem> {
+    return this.contentFiles.read(path, uri)
+  }
+}
+
+/** Large local content remains an identity-bound source, never an empty payload. */
+class NativeCloudSyncContent {
+  private readonly sources = new WeakMap<CloudSyncContent, { path: string; hash: string; bytes: number }>()
+  private recoveryChecked = false
+
+  constructor(private readonly fs: PortableCloudSyncFileSystem, private readonly native: CloudSyncNativeFiles) {}
+
+  async assertReady(force = false): Promise<void> {
+    if (this.recoveryChecked && !force) return
+    const entries = await this.native.readdirStrict('.zennotes/sync').catch((error) => {
+      if (!isNotFoundError(error)) throw error
+      return []
+    })
+    const recovery = entries.find((entry) => entry.name.startsWith('rollback-'))
+    if (recovery) {
+      // Never turn a process-interrupted rename into a new local deletion.
+      throw new Error(`Cloud sync needs recovery of .zennotes/sync/${recovery.name} before it can continue.`)
+    }
+    this.recoveryChecked = true
+  }
+
+  async read(path: string, uri?: string): Promise<CloudSyncLocalItem> {
+    await this.assertReady()
+    const file = await this.native.readForSync(path, TEXT_EXTENSIONS.has(extension(path)), uri)
+    if (file.byteLength > CLOUD_SYNC_INLINE_UPLOAD_LIMIT_BYTES) {
+      const content = rememberMobileUploadSource({
+        encoding: file.utf8 ? 'utf8' : 'base64', data: '', sha256: file.sha256,
+        byte_length: file.byteLength, media_type: mediaType(path, file.utf8)
+      }, file.uri)
+      this.sources.set(content, { path, hash: file.sha256, bytes: file.byteLength })
+      return {
+        path,
+        kind: file.utf8 ? 'text' : 'binary',
+        content
+      }
+    }
+    if (file.inlineBase64 === undefined) throw new Error('Native file inspection omitted inline content.')
+    const { bytes, base64 } = await decodeCloudSyncBase64(file.inlineBase64)
     const text = decodeText(path, bytes)
     return {
       path,
@@ -148,12 +229,89 @@ export class CachedCloudSyncRepository extends PortableCloudSyncRepository {
       content: {
         encoding: text === null ? 'base64' : 'utf8',
         data: text === null ? base64 : text,
-        sha256: await sha256(bytes),
+        sha256: file.sha256,
         byte_length: bytes.byteLength,
         media_type: mediaType(path, text !== null)
       }
     }
   }
+
+  async validate(content: CloudSyncContent): Promise<void> {
+    if (content.encoding !== 'utf8' && content.encoding !== 'base64') {
+      throw new Error('Encrypted cloud sync content must be decrypted before filesystem apply')
+    }
+    if (content.data !== '' || content.byte_length === 0) return
+    const source = this.sources.get(content)
+    if (!source || source.hash !== content.sha256 || source.bytes !== content.byte_length) {
+      throw new Error('This file content has no recognized source bytes. Sync again and retry.')
+    }
+    await this.verify(source.path, content)
+  }
+
+  private async verify(path: string, content: CloudSyncContent): Promise<void> {
+    // Resolve the current path again: a saved document URI may name a replaced file.
+    const file = await this.native.readForSync(path, false)
+    if (file.sha256 !== content.sha256 || file.byteLength !== content.byte_length) {
+      throw new Error('The file source changed or its copy failed byte verification. Sync again and retry.')
+    }
+  }
+
+  async write(path: string, content: CloudSyncContent): Promise<void> {
+    await this.assertReady()
+    await this.validate(content)
+    const kind = await this.fs.stat(path)
+    if (kind === 'directory') throw new Error('The destination is a directory.')
+    const before = kind === 'file' ? await this.read(path) : null
+    const temporary = `.zennotes/sync/write-${crypto.randomUUID()}${extension(path)}`
+    const backup = `.zennotes/sync/rollback-${crypto.randomUUID()}${extension(path)}`
+    let publishing = false
+    let completed = false
+    try {
+      const source = this.sources.get(content)
+      if (content.data === '' && content.byte_length > 0 && source) {
+        await this.native.copyForSync(source.path, temporary, content.byte_length)
+        await this.validate(content)
+      } else if (content.encoding === 'utf8') {
+        await this.fs.writeText(temporary, content.data)
+      } else {
+        await this.fs.writeBase64(temporary, content.data)
+      }
+      await this.verify(temporary, content)
+      if (before) {
+        await this.verify(path, before.content)
+        await this.fs.rename(path, backup)
+      } else if (await this.fs.stat(path) !== null) {
+        throw new Error('The destination changed before its Cloud write.')
+      }
+      publishing = true
+      await this.fs.rename(temporary, path)
+      await this.verify(path, content)
+      completed = true
+    } catch (error) {
+      // Native operations may modify the destination and then reject. The
+      // original is kept separately until the published bytes are verified.
+      if (await this.fs.stat(backup) === 'file') {
+        try {
+          if (await this.fs.stat(path) !== null) await this.fs.deleteFile(path)
+          await this.fs.rename(backup, path)
+        } catch (rollbackError) {
+          throw new Error(`Cloud write rollback failed; the original is preserved at ${backup}.`, { cause: rollbackError })
+        }
+      } else if (!before && publishing && await this.fs.stat(path) !== null) {
+        await this.fs.deleteFile(path)
+      }
+      throw error
+    } finally {
+      this.recoveryChecked = false
+      if (await this.fs.stat(temporary) === 'file') await this.fs.deleteFile(temporary).catch(() => {})
+      if (completed) await this.fs.deleteFile(backup).catch(() => {})
+    }
+  }
+}
+
+function isStagingNative(native: CloudSyncNativeFiles): native is CloudSyncNativeFiles & CloudStagingNative {
+  return ['statVerified', 'download', 'rename', 'deleteFile', 'mkdir', 'readText']
+    .every((method) => typeof (native as Record<string, unknown>)[method] === 'function')
 }
 
 function itemFromCache(path: string, cached: ScanCacheEntry): CloudSyncLocalItem {
@@ -287,11 +445,4 @@ function extension(path: string): string {
 
 function mediaType(path: string, text: boolean): string {
   return MEDIA_TYPES[extension(path)] ?? (text ? 'text/plain' : 'application/octet-stream')
-}
-
-async function sha256(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', bytes.buffer)
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
 }

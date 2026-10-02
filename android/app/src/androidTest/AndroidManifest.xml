@@ -4,5 +4,9 @@
         <provider android:name="md.zennotes.SafFixtureProvider"
             android:authorities="md.zennotes.test.saf-fixture"
             android:exported="true" android:grantUriPermissions="true" />
+        <provider android:name="md.zennotes.CloudUploadFixtureProvider"
+            android:authorities="md.zennotes.test.cloud-files"
+            android:readPermission="android.permission.MANAGE_DOCUMENTS"
+            android:exported="true" android:grantUriPermissions="true" />
     </application>
 </manifest>

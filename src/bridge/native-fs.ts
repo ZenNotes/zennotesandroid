@@ -95,6 +95,20 @@ const SafFs = registerPlugin<{
   delete(o: { root: string; path: string }): Promise<void>
 }>('SafFs')
 
+export interface CloudFileFingerprint {
+  uri: string
+  sha256: string
+  byteLength: number
+  utf8: boolean
+  inlineBase64?: string
+}
+
+const CloudFiles = registerPlugin<{
+  inspect(options: { uri: string; textCandidate: boolean }): Promise<CloudFileFingerprint>
+  copy(options: { from: string; to: string; byteLength: number; sha256: string }): Promise<void>
+  download(options: { url: string; headers: Record<string, string>; to: string; byteLength: number; sha256: string }): Promise<void>
+}>('ZenDirectUpload')
+
 export function isSafRoot(uri: string | null | undefined): boolean {
   return typeof uri === 'string' && uri.startsWith('content://')
 }
@@ -225,6 +239,15 @@ export class NativeFs {
     const res = await Filesystem.readFile(this.loc(relPath))
     if (typeof res.data === 'string') return res.data
     return bytesToBase64(new Uint8Array(await res.data.arrayBuffer()))
+  }
+
+  async readForSync(relPath: string, textCandidate: boolean, knownUri?: string): Promise<CloudFileFingerprint> {
+    const location = this.loc(relPath)
+    const uri = knownUri ?? (this.saf
+      ? (await SafFs.stat({ root: this.cloudRootUri!, path: relPath })).uri
+      : location.directory === undefined ? location.path
+        : (await Filesystem.getUri({ path: location.path, directory: location.directory })).uri)
+    return CloudFiles.inspect({ uri, textCandidate })
   }
 
   async readTextOrNull(relPath: string): Promise<string | null> {
@@ -367,6 +390,41 @@ export class NativeFs {
       directory: from.directory,
       toDirectory: to.directory
     })
+  }
+
+  /** Copy into staging without carrying file bytes across the bridge or
+   * reopening a remote document provider for every chunk. */
+  async copyForSync(fromRel: string, toRel: string, byteLength: number): Promise<void> {
+    if (fromRel === toRel || !Number.isSafeInteger(byteLength) || byteLength < 0) {
+      throw new Error('Invalid Cloud file copy.')
+    }
+    if (await this.statVerified(toRel) !== null) throw new Error('Cloud copy destination already exists.')
+    const source = await this.readForSync(fromRel, false)
+    if (source.byteLength !== byteLength) throw new Error('The Cloud copy source changed size.')
+    const parent = toRel.includes('/') ? toRel.slice(0, toRel.lastIndexOf('/')) : ''
+    if (parent) await this.mkdir(parent)
+    await this.writeBase64(toRel, '')
+    const target = await this.statOrNull(toRel)
+    if (!target) throw new Error('Cloud copy staging file is unavailable.')
+    await CloudFiles.copy({ from: source.uri, to: target.uri, byteLength, sha256: source.sha256 })
+  }
+
+  /** Stream a signed Cloud revision into a fresh vault-private staging file.
+   * The native side verifies length and SHA-256 before resolving, so the
+   * WebView never holds the body and a truncated download never lands. */
+  async download(options: { url: string; headers: Record<string, string>; to: string; byteLength: number; sha256: string }): Promise<void> {
+    if (await this.statVerified(options.to) !== null) throw new Error('Cloud download destination already exists.')
+    const parent = options.to.includes('/') ? options.to.slice(0, options.to.lastIndexOf('/')) : ''
+    if (parent) await this.mkdir(parent)
+    await this.writeBase64(options.to, '')
+    const target = await this.statOrNull(options.to)
+    if (!target) throw new Error('Cloud download staging file is unavailable.')
+    try {
+      await CloudFiles.download({ ...options, to: target.uri })
+    } catch (error) {
+      await this.deleteFile(options.to).catch(() => {})
+      throw error
+    }
   }
 
   async deleteFile(relPath: string): Promise<void> {

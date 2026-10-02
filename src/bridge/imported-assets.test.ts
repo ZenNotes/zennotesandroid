@@ -44,9 +44,15 @@ describe('importedAssetMarkdown', () => {
     assert.ok(!markdown.includes('../'))
   })
 
-  it('angle-brackets a non-image link so a space cannot break it', () => {
-    const rel = importedAssetRelPath('year end.pdf')
-    assert.equal(importedAssetMarkdown(rel, 'year end.pdf', 'pdf'), '[year end.pdf](<assets/year end.pdf>)')
+  it('embeds a video, audio file, or PDF so the note shows it in place', () => {
+    assert.equal(importedAssetMarkdown(importedAssetRelPath('IMG_2709.mov'), 'IMG_2709.mov', 'video'), '![[assets/IMG_2709.mov]]')
+    assert.equal(importedAssetMarkdown(importedAssetRelPath('talk.mp3'), 'talk.mp3', 'audio'), '![[assets/talk.mp3]]')
+    assert.equal(importedAssetMarkdown(importedAssetRelPath('year end.pdf'), 'year end.pdf', 'pdf'), '![[assets/year end.pdf]]')
+  })
+
+  it('angle-brackets a plain file link so a space cannot break it', () => {
+    const rel = importedAssetRelPath('year end.zip')
+    assert.equal(importedAssetMarkdown(rel, 'year end.zip', 'file'), '[year end.zip](<assets/year end.zip>)')
   })
 
   it('escapes a closing angle bracket in the path', () => {

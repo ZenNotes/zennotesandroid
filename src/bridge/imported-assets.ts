@@ -35,16 +35,20 @@ export function importedAssetRelPath(filename: string): string {
   return `${ASSETS_DIR}/${filename}`
 }
 
-/** The link written into the note, by vault-relative path. Images take the
- *  wikilink form, matching pasted images and the cloud vault; anything else
- *  gets an angle-bracketed markdown link so a space in the name cannot break
- *  it. Never a note-relative `../` path: the old attach path hand-built one
- *  from the note's depth, which pointed outside the vault from a nested note. */
+/** The link written into the note, by vault-relative path. Images, PDFs, audio
+ *  and video take the embed form, matching pasted images and the desktop, so
+ *  the note shows the picture, the document, or a player in place (a video
+ *  attached here used to show up as its bare file name). Anything else gets an
+ *  angle-bracketed markdown link so a space in the name cannot break it. Never
+ *  a note-relative `../` path: the old attach path hand-built one from the
+ *  note's depth, which pointed outside the vault from a nested note. */
 export function importedAssetMarkdown(
   relPath: string,
   filename: string,
   kind: ImportedAssetKind
 ): string {
-  if (kind === 'image') return `![[${relPath}]]`
+  if (EMBEDDED_ASSET_KINDS.has(kind)) return `![[${relPath}]]`
   return `[${filename}](<${relPath.replace(/>/g, '%3E')}>)`
 }
+
+const EMBEDDED_ASSET_KINDS: ReadonlySet<ImportedAssetKind> = new Set(['image', 'pdf', 'audio', 'video'])

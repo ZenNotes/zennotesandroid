@@ -1576,7 +1576,9 @@ function mobilizeSettingsPanel(panel: HTMLElement): void {
 
   // Everything below is the phone-only paged treatment.
   if (!isPhoneWidth()) return
-  panel.dataset.znView = 'nav'
+  // Opened for a page (Review on the Cloud status row asks for Cloud): start
+  // on that page. The section list made people find the page a second time.
+  panel.dataset.znView = panel.dataset.settingsTarget ? 'detail' : 'nav'
 
   const aside = panel.querySelector('aside')
   if (!aside) return

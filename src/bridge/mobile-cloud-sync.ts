@@ -5,6 +5,8 @@ import type {
   CloudBackupRestoreResult,
   CloudBackupSchedule,
   CloudBackupSnapshot,
+  CloudBackupItemsPage,
+  CloudBackupItemsQuery,
   CloudBackupSnapshotItem,
   CloudSyncRunSummary,
   CloudSyncPendingConflictDetails,
@@ -242,6 +244,16 @@ export async function listMobileCloudBackupItems(
   backupId: string
 ): Promise<CloudBackupSnapshotItem[]> {
   return service.listBackupItems(hostVault(vault), backupId)
+}
+
+/** One page of a backup's notes, searched by path on the service, so the
+ *  backup browser can reach notes past the first 50. */
+export async function listMobileCloudBackupItemsPage(
+  vault: MobileVault,
+  backupId: string,
+  query: CloudBackupItemsQuery
+): Promise<CloudBackupItemsPage> {
+  return service.listBackupItemsPage(hostVault(vault), backupId, query)
 }
 
 export async function createMobileCloudBackup(

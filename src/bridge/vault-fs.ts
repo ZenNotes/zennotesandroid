@@ -57,8 +57,11 @@ import {
   isExcalidrawPath,
   isMarkdownPath,
   joinPath,
+  leftoverCommentsMessage,
   NOTE_COMMENTS_DIR,
   NOTE_COMMENTS_SUFFIX,
+  NOTE_METADATA_DIR,
+  NOTE_METADATA_SUFFIX,
   RESERVED_ROOT_NAMES,
   resolveSafeRel,
   sanitizeNoteTitle,
@@ -681,20 +684,37 @@ export class MobileVault {
     }
   }
 
+  /**
+   * Move a note with its comments and its creation date, as desktop's
+   * note-sidecars.ts `relocateNote` does; a sidecar the note lacks is not
+   * moved. A creation date already at a destination with no note beside it
+   * belongs to nobody (its note left outside ZenNotes) and is discarded rather
+   * than inherited (ZenNotes#839). Leftover comments there are another note's
+   * discussion: taking it over and deleting it are both wrong, so the move is
+   * refused.
+   */
   private async relocateNote(oldPath: string, newPath: string): Promise<void> {
+    const comments = this.commentsPathFor(newPath)
+    const metadata = this.metadataPathFor(newPath)
+    if (await this.fs.statVerified(newPath) === null) {
+      if (await this.fs.statVerified(comments) !== null) throw new Error(leftoverCommentsMessage(newPath))
+      if (await this.fs.statVerified(metadata) === 'file') await this.fs.deleteFile(metadata)
+    }
     await relocateVaultEntries(this.relocationIO(), [
       { from: oldPath, to: newPath, required: true },
-      { from: this.commentsPathFor(oldPath), to: this.commentsPathFor(newPath) }
+      { from: this.commentsPathFor(oldPath), to: comments },
+      { from: this.metadataPathFor(oldPath), to: metadata }
     ])
     this.invalidateMeta(oldPath)
   }
 
-  /** Detach both trees before cleanup so a failed move can restore the original. */
-  private async detachContent(path: string, comments: string, required = true): Promise<void> {
+  /** Detach the content and both sidecar trees before cleanup so a failed move can restore the original. */
+  private async detachContent(path: string, comments: string, metadata: string, required = true): Promise<void> {
     const temporary = `${INTERNAL_VAULT_DIR}/delete-${uuid()}`
     const moves: VaultRelocation[] = [
       { from: path, to: `${temporary}/content`, required },
-      { from: comments, to: `${temporary}/comments` }
+      { from: comments, to: `${temporary}/comments` },
+      { from: metadata, to: `${temporary}/metadata` }
     ]
     await relocateVaultEntries(this.relocationIO(), moves)
     try {
@@ -804,7 +824,12 @@ export class MobileVault {
 
   async emptyTrash(): Promise<void> {
     const trashDir = await this.folderRootRel('trash')
-    await this.detachContent(trashDir, `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${trashDir}`, false)
+    await this.detachContent(
+      trashDir,
+      `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${trashDir}`,
+      `${INTERNAL_VAULT_DIR}/${NOTE_METADATA_DIR}/${trashDir}`,
+      false
+    )
     for (const key of [...this.metaCache.keys()]) {
       if (key.startsWith(`${trashDir}/`)) this.invalidateMeta(key)
     }
@@ -814,7 +839,7 @@ export class MobileVault {
   async deleteNote(relPath: string): Promise<void> {
     const rel = resolveSafeRel(relPath)
     const folder = (await this.folderOf(rel)) ?? 'trash'
-    await this.detachContent(rel, this.commentsPathFor(rel))
+    await this.detachContent(rel, this.commentsPathFor(rel), this.metadataPathFor(rel))
     this.invalidateMeta(rel)
     emitVaultChange({ kind: 'unlink', path: rel, folder, scope: 'content' })
   }
@@ -905,10 +930,15 @@ export class MobileVault {
     const settingsPath = `${INTERNAL_VAULT_DIR}/vault.json`
     const hadSettings = await this.fs.statVerified(settingsPath) !== null
     const originalSettings = hadSettings ? await this.fs.readText(settingsPath) : null
+    // A creation-date tree already at the destination refuses the rename, as
+    // desktop's relocateFolderTrees does: only a single note's stale date is
+    // discarded (relocateNote).
     await relocateVaultEntries(this.relocationIO(), [
       { from: oldRel, to: newRel, required: true },
       { from: `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${oldRel}`,
-        to: `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${newRel}` }
+        to: `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${newRel}` },
+      { from: `${INTERNAL_VAULT_DIR}/${NOTE_METADATA_DIR}/${oldRel}`,
+        to: `${INTERNAL_VAULT_DIR}/${NOTE_METADATA_DIR}/${newRel}` }
     ], async () => {
       try {
       await this.setVaultSettings({
@@ -940,7 +970,11 @@ export class MobileVault {
     const clean = subpath.replace(/^\/+|\/+$/g, '')
     if (!clean) return
     const rel = resolveSafeRel(joinPath(topRel, clean))
-    await this.detachContent(rel, `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${rel}`)
+    await this.detachContent(
+      rel,
+      `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${rel}`,
+      `${INTERNAL_VAULT_DIR}/${NOTE_METADATA_DIR}/${rel}`
+    )
     for (const key of [...this.metaCache.keys()]) {
       if (key.startsWith(`${rel}/`)) this.invalidateMeta(key)
     }
@@ -972,6 +1006,12 @@ export class MobileVault {
 
   private commentsPathFor(rel: string): string {
     return `${INTERNAL_VAULT_DIR}/${NOTE_COMMENTS_DIR}/${rel}${NOTE_COMMENTS_SUFFIX}`
+  }
+
+  /** `.zennotes/note-metadata/<rel>.metadata.json`, the creation date desktop
+   *  keeps for the note (see NOTE_METADATA_DIR). */
+  private metadataPathFor(rel: string): string {
+    return `${INTERNAL_VAULT_DIR}/${NOTE_METADATA_DIR}/${rel}${NOTE_METADATA_SUFFIX}`
   }
 
   async readNoteComments(relPath: string): Promise<NoteComment[]> {

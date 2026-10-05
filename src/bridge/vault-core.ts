@@ -7,6 +7,7 @@
  * spelling — do not "fix" it and do not add an `attachments` variant.
  */
 import type { ImportedAssetKind, NoteFolder, VaultSettings } from '@zennotes/bridge-contract/ipc'
+import { noteCommentsSidecarPath } from '@zennotes/shared-domain/note-comments'
 import {
   resolveFolderPath,
   systemFolderForDirName,
@@ -31,8 +32,13 @@ export const ATTACHMENTS_DIRS = [ASSETS_DIR, ...LEGACY_ATTACHMENTS_DIRS]
 export const INTERNAL_VAULT_DIR = '.zennotes'
 export const DELETED_ASSETS_DIR = 'deleted-assets'
 export const VAULT_SETTINGS_FILE = 'vault.json'
-export const NOTE_COMMENTS_DIR = 'comments'
-export const NOTE_COMMENTS_SUFFIX = '.comments.json'
+export { NOTE_COMMENTS_DIR, NOTE_COMMENTS_SUFFIX } from '@zennotes/shared-domain/note-comments'
+// A note's creation date, which desktop keeps beside it as
+// `.zennotes/note-metadata/<note path>.metadata.json`
+// (apps/desktop/src/main/note-creation-metadata.ts, no shared export yet).
+// The phone never reads or writes one, only moves or deletes it with its note.
+export const NOTE_METADATA_DIR = 'note-metadata'
+export const NOTE_METADATA_SUFFIX = '.metadata.json'
 export const TEMPLATES_DIR = '.zennotes/templates'
 
 export const RESERVED_ROOT_NAMES = new Set<string>([
@@ -139,6 +145,14 @@ export function isExcalidrawPath(p: string): boolean {
 
 export function isMarkdownPath(p: string): boolean {
   return p.toLowerCase().endsWith('.md')
+}
+
+/** Desktop's refusal (note-sidecars.ts `leftoverCommentsMessage`), word for
+ *  word, when a rename or move lands on a name an earlier note left comments
+ *  under: every writer refuses the same way and names the file to move aside. */
+export function leftoverCommentsMessage(notePath: string): string {
+  const sidecar = noteCommentsSidecarPath(INTERNAL_VAULT_DIR, notePath)
+  return `Comments from an earlier note named “${stemName(notePath)}” are still in ${sidecar}. Move or delete that file to use this name.`
 }
 
 // ---------------------------------------------------------------------------

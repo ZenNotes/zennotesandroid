@@ -27,6 +27,7 @@ import { usePins, toggleNotePin, toggleFolderPin } from './pins'
 import { archiveNote, openNoteMenu, trashNote } from './note-actions'
 import { refreshVault } from './refresh'
 import { SwipeRow } from './SwipeRow'
+import { drawerFileRows, fileExtensionLabel, type DrawerFileRow } from './browse-files'
 import { SheetHandle } from './SheetHandle'
 import { getStoragePref } from '../bridge/icloud'
 import {
@@ -92,7 +93,9 @@ const D = {
   chevDown: 'M6 9l6 6 6-6',
   more: 'M6 12h.01M12 12h.01M18 12h.01',
   pencil: 'M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z',
-  pin: 'M12 17v5M9 3h6l-1 7 3 2v3H7v-3l3-2-1-7z'
+  pin: 'M12 17v5M9 3h6l-1 7 3 2v3H7v-3l3-2-1-7z',
+  // The editor toolbar's "Attach file" glyph.
+  file: 'M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l8.57-8.57A4 4 0 0118 8.84l-8.59 8.57a2 2 0 01-2.83-2.83l8.49-8.48'
 }
 
 /** WKWebView leaves the soft keyboard up when a focused input unmounts
@@ -763,12 +766,13 @@ export function MobileDrawer(): React.JSX.Element | null {
     if (open) setPath(takeDrawerPath())
   }, [open])
 
-  const { childFolders, childDatabases, childNotes } = useMemo(() => {
+  const { childFolders, childDatabases, childNotes, childFiles } = useMemo(() => {
     const rows = getBrowseDirectory(browse, path, pins)
     return {
       childFolders: rows.folders.map(row => [row.directory, row.title] as [string, string]),
       childDatabases: rows.databases.map(row => [row.path, row.title, row.directory] as [string, string, string]),
-      childNotes: [...rows.notes]
+      childNotes: [...rows.notes],
+      childFiles: drawerFileRows(rows)
     }
   }, [browse, path, pins])
 
@@ -801,6 +805,7 @@ export function MobileDrawer(): React.JSX.Element | null {
       childFolders={childFolders}
       childDatabases={childDatabases}
       childNotes={childNotes}
+      childFiles={childFiles}
       noteSortOrder={noteSortOrder}
       close={close}
       go={go}
@@ -875,6 +880,7 @@ function MobileDrawerBody(props: {
   childFolders: Array<[string, string]>
   childDatabases: Array<[string, string, string]>
   childNotes: Array<{ path: string; title: string }>
+  childFiles: readonly DrawerFileRow[]
   noteSortOrder: NoteSortOrder
   close: () => void
   go: (action: () => unknown) => void
@@ -893,6 +899,7 @@ function MobileDrawerBody(props: {
     childFolders,
     childDatabases,
     childNotes,
+    childFiles,
     noteSortOrder,
     close,
     go
@@ -1215,7 +1222,20 @@ function MobileDrawerBody(props: {
                 </SwipeRow>
               )
             })}
-            {childFolders.length === 0 && childDatabases.length === 0 && childNotes.length === 0 && (
+            {/* Attachments and other files, after the notes as on desktop. A
+                tap opens core's viewer the way a database row opens its table. */}
+            {childFiles.map((file) => {
+              const extension = fileExtensionLabel(file.name)
+              return (
+                <button key={file.path} type="button" onClick={() => go(() => openNote(file.path))}>
+                  <Icon d={D.file} />
+                  <span className="zn-truncate">{file.name}</span>
+                  {extension && <span className="zn-mobile-drawer-ext">{extension}</span>}
+                </button>
+              )
+            })}
+            {childFolders.length === 0 && childDatabases.length === 0 && childNotes.length === 0 &&
+              childFiles.length === 0 && (
               <div className="zn-mobile-drawer-empty">No notes here yet</div>
             )}
             <button

@@ -1091,6 +1091,15 @@
   color: rgb(var(--z-accent)) !important;
 }
 
+/* File rows end in their extension, as on the desktop sidebar, so a name the
+   row truncates still says what kind of file it is. */
+.zn-phone .zn-mobile-drawer-ext {
+  flex: none;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: rgb(var(--z-grey-1));
+}
+
 /* ---- Pull-to-refresh (drawer) -------------------------------------------- */
 
 .zn-phone .zn-mobile-drawer-refresh {

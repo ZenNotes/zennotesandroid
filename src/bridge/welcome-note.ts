@@ -11,16 +11,16 @@ export const WELCOME_NOTE_PATH = 'inbox/Welcome to ZenNotes.md'
 
 export const WELCOME_NOTE_BODY = `# Welcome to ZenNotes
 
-This is your first note. It is yours — edit it, add to it, or delete it once you have found your feet.
+This is your first note. It is yours: edit it, add to it, or delete it once you have found your feet.
 
 ## The circle
 
 The small circle in the bottom corner is how you get around. Tap it:
 
-- **New** — write a note
-- **Search** — find anything, instantly
-- **Browse** — your folders, tasks, and tags
-- **More** — everything else, including Settings
+- **New**: write a note
+- **Search**: find anything, instantly
+- **Browse**: your folders, tasks, and tags
+- **More**: everything else, including Settings
 
 ## Try it now
 
@@ -30,11 +30,11 @@ The small circle in the bottom corner is how you get around. Tap it:
 
 ## Just plain text
 
-Every note is a plain Markdown file — **bold**, *italic*, lists, and checkboxes are all simple text. No database, no lock-in. Your notes stay readable anywhere, forever.
+Every note is a plain Markdown file: **bold**, *italic*, lists, and checkboxes are all simple text. No database, no lock-in. Your notes stay readable anywhere, forever.
 
 ## Organize with tags and folders
 
-Type \`#\` in any note to tag it — like #ideas on this one. Tags appear under **Browse → Tags** the moment you write them.
+Type \`#\` in any note to tag it, like #ideas on this one. Tags appear under **Browse → Tags** the moment you write them.
 
 Folders work the way you expect: create one in **Browse → New folder**, and move any note with the circle → **More** → **Move to…**.
 
@@ -48,11 +48,11 @@ $$
 
 ## Capture from anywhere
 
-Reading something worth keeping? Share it from any app and choose **ZenNotes** — it lands in your notes, ready when you are.
+Reading something worth keeping? Share it from any app and choose **ZenNotes**. It lands in your notes, ready when you are.
 
 ## Where your notes live
 
-Your notes are plain files stored privately on this device. To keep several vaults and switch between them — or to connect a self-hosted ZenNotes server — tap the circle → **More** → **Settings** → **Vault**.
+Your notes are plain files stored privately on this device. To keep several vaults and switch between them, or to connect a self-hosted ZenNotes server, tap the circle → **More** → **Settings** → **Vault**.
 
 ## When you want more
 

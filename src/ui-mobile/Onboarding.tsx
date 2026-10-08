@@ -69,7 +69,7 @@ function OnboardingOverlay({ onDone }: OnboardingProps): React.JSX.Element {
             </button>
           </div>
           <p className="zn-onboard-foot">
-            Notes are plain files on your device — never on our servers.
+            Notes are plain Markdown files on your device.
           </p>
         </div>
       )}

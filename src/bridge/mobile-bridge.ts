@@ -98,6 +98,8 @@ import {
   unpublishMobileCloudNote,
   updateMobileCloudPublishedNote
 } from './mobile-cloud-auth'
+import { uploadObject } from './cloud-sync-client'
+import { mobilePublishAssetPlatform } from './mobile-publish-assets'
 import {
   createAndLinkMobileCloudVault,
   createMobileCloudBackup,
@@ -769,15 +771,33 @@ function resolveVaultAssetUrl(_vaultRoot: string, assetPath: string): string | n
   return vault?.fs.fileSrc(normalized) ?? null
 }
 
-async function readVaultAssetBase64(assetPath: string): Promise<string> {
-  const normalized = posixNormalize(assetPath.trim().replace(/^\/+/, ''))
+function vaultAssetPath(assetPath: string): string {
+  const normalized = posixNormalize(String(assetPath ?? '').trim().replace(/^\/+/, ''))
   if (!normalized || normalized.startsWith('../') || normalized === '..') {
     throw new Error('Asset path is invalid.')
   }
+  return normalized
+}
+
+async function readVaultAssetBase64(assetPath: string): Promise<string> {
+  const normalized = vaultAssetPath(assetPath)
   const remote = activeRemote()
   if (remote) return (await remote.client.fetchAssetBase64(normalized)).base64
   return await activeMobileVault().fs.readBase64(normalized)
 }
+
+/** A published note's attachments, for the staged publish: an on-device
+ *  vault's files are fingerprinted and uploaded natively; a remote vault's
+ *  arrive as base64. */
+const mobilePublishAssets = mobilePublishAssetPlatform({
+  async fingerprint(assetPath) {
+    const normalized = vaultAssetPath(assetPath)
+    if (activeRemote()) return null
+    const print = await activeMobileVault().fs.readForSync(normalized, false)
+    return { uri: print.uri, sha256: print.sha256, byteLength: print.byteLength }
+  },
+  readBase64: readVaultAssetBase64
+}, uploadObject)
 
 // --------------------------------------------------------------------
 // Dropped-file token bucket (mirrors the web bridge)
@@ -906,8 +926,8 @@ export const mobileBridge: ZenBridge = {
   onCloudAccountChange: onMobileCloudAccountChange,
   getCloudServiceAccount: getMobileCloudServiceAccount,
   listCloudPublishedNotes: listMobileCloudPublishedNotes,
-  publishCloudNote: publishMobileCloudNote,
-  updateCloudPublishedNote: updateMobileCloudPublishedNote,
+  publishCloudNote: (input) => publishMobileCloudNote(input, mobilePublishAssets),
+  updateCloudPublishedNote: (shareId, input) => updateMobileCloudPublishedNote(shareId, input, mobilePublishAssets),
   unpublishCloudNote: unpublishMobileCloudNote,
   listCloudVaults: listMobileCloudVaults,
   getCloudVaultLink: () => getMobileCloudVaultLink(activeMobileVault()),

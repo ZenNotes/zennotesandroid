@@ -17,7 +17,8 @@ This is your first note. It is yours: edit it, add to it, or delete it once you 
 
 The small circle in the bottom corner is how you get around. Tap it:
 
-- **New**: write a note
+- **Quick**, **Note**, or **Task**: start one with a single tap
+- **New…**: everything you can create, templates and folders included
 - **Search**: find anything, instantly
 - **Browse**: your folders, tasks, and tags
 - **More**: everything else, including Settings
@@ -25,7 +26,8 @@ The small circle in the bottom corner is how you get around. Tap it:
 ## Try it now
 
 - [ ] Tap this checkbox to tick it off
-- [ ] Tap the circle, then **New**, and write down a thought
+- [ ] Tap the circle, then **Note**, and write down a thought
+- [ ] Tap the circle, then **Task**, and add something to do
 - [ ] Tap the circle, then **Browse**, to see your folders
 
 ## Just plain text

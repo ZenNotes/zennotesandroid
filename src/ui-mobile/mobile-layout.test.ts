@@ -16,8 +16,26 @@ test('Cloud footer reserves a touch-sized row below the phone floating navigatio
   assert.equal(declaration('.zn-phone:has([data-cloud-sync-status])', '--zn-cloud-footer-height'), '44px')
   assert.equal(declaration('.zn-phone .h-8:has([data-cloud-sync-status])', 'height'), 'var(--zn-cloud-footer-height)')
   assert.equal(declaration('.zn-phone [data-cloud-sync-action]', 'min-height'), '44px')
-  for (const selector of ['.zn-mobile-fab', '.zn-mobile-fab-menu', '.zn-mobile-fab-hint']) {
+  for (const selector of ['.zn-mobile-fab', '.zn-mobile-fab-menu', '.zn-mobile-fab-create', '.zn-mobile-fab-hint']) {
     assert.ok(declaration(selector, 'bottom')?.includes('var(--zn-cloud-footer-height, 0px)'), selector)
+  }
+})
+
+/** Like `declaration`, but finds a selector inside a comma-grouped rule. */
+function groupedDeclaration(selector: string, property: string): string | undefined {
+  let result: string | undefined
+  css.walkRules((rule) => {
+    if (!rule.selectors.includes(selector)) return
+    rule.walkDecls(property, (decl) => { result = decl.value })
+  })
+  return result
+}
+
+test('the create row comes and goes with the dial: phone layout only, hidden by the keyboard (#101)', () => {
+  for (const part of ['.zn-mobile-fab', '.zn-mobile-fab-menu', '.zn-mobile-fab-create']) {
+    assert.equal(declaration(part, 'display'), 'none', part)
+    assert.equal(groupedDeclaration(`.zn-phone ${part}`, 'display'), 'flex', part)
+    assert.equal(groupedDeclaration(`.zn-mobile.zn-kb-open ${part}`, 'display'), 'none', part)
   }
 })
 
@@ -41,3 +59,8 @@ test('the wikilink hover preview card is hidden on touch, where no mouseout ever
 
 // Editor viewport clearance is owned by app-core's public host registration.
 // Its installed-package browser check verifies the physical editor/menu bounds.
+
+test('toasts on a phone sit where the dial column starts, clear of the ensō (#101)', () => {
+  assert.equal(groupedDeclaration('.zn-phone [data-toast-host]', 'bottom'), declaration('.zn-mobile-fab-menu', 'bottom'))
+  assert.equal(groupedDeclaration('.zn-phone [data-toast-host]', 'align-items'), 'center')
+})

@@ -149,6 +149,68 @@
   color: rgb(var(--z-grey-1));
 }
 
+/* Creating, on the bottom edge beside the ensō (#101): one tap each once the
+   dial is open, so the column above stays navigation and no taller. Round
+   faces in the pills' glass with captions under them, on the ensō's baseline,
+   Quick to the left so the full Create sheet keeps the old New pill's spot. */
+.zn-mobile-fab-create {
+  position: fixed;
+  right: calc(1.25rem + 54px + 0.75rem + env(safe-area-inset-right));
+  bottom: calc(0.75rem + env(safe-area-inset-bottom) + var(--zn-cloud-footer-height, 0px));
+  z-index: 41;
+  display: none;
+  align-items: flex-end;
+  gap: 0.5rem;
+  animation: zn-fade-in 0.15s ease;
+}
+
+.zn-mobile-fab-create button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  width: 3.25rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
+  color: rgb(var(--z-fg));
+}
+
+.zn-mobile-fab-create-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background: rgb(var(--z-bg-2) / 0.95);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  border: 0.5px solid rgb(var(--z-bg-4) / 0.7);
+  box-shadow: 0 6px 20px -8px rgb(0 0 0 / 0.5);
+}
+
+.zn-mobile-fab-create button:active .zn-mobile-fab-create-face {
+  transform: scale(0.94);
+}
+
+.zn-mobile-fab-create svg {
+  width: 20px;
+  height: 20px;
+  color: rgb(var(--z-grey-1));
+}
+
+/* Toasts clear the ensō on a phone (#101). Core pins them to the
+   bottom-right corner, the button's own spot, so a "Task added" from the
+   create row would cover the circle that made it. They sit where the dial's
+   column starts instead, centered. */
+.zn-phone [data-toast-host] {
+  left: 1rem;
+  right: 1rem;
+  bottom: calc(0.75rem + 54px + 0.875rem + env(safe-area-inset-bottom) + var(--zn-cloud-footer-height, 0px));
+  align-items: center;
+}
+
 /* First-run coach mark: labels the ensō (new users read the unlabeled circle
    as a loading spinner). Rendered until the first tap, then gone for good. */
 .zn-mobile-fab-hint {
@@ -630,6 +692,7 @@
 
 .zn-phone .zn-mobile-fab,
 .zn-phone .zn-mobile-fab-menu,
+.zn-phone .zn-mobile-fab-create,
 .zn-phone .zn-mobile-fab-hint {
   display: flex;
 }
@@ -2444,6 +2507,7 @@
 
 .zn-mobile.zn-kb-open .zn-mobile-fab,
 .zn-mobile.zn-kb-open .zn-mobile-fab-menu,
+.zn-mobile.zn-kb-open .zn-mobile-fab-create,
 .zn-mobile.zn-kb-open .zn-mobile-fab-backdrop {
   display: none;
 }

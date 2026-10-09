@@ -106,6 +106,9 @@ const ICONS = {
   sidebar: 'M3 5.5h18M3 12h18M3 18.5h12',
   back: 'M14.5 5l-7 7 7 7',
   capture: 'M12 5v14M5 12h14',
+  // The drawer's Quick Notes and Tasks faces, so a create reads as its home.
+  quick: 'M13 2L4.5 12.5H11L10 22l8.5-10.5H12L13 2',
+  task: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11',
   search: 'M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z',
   more: 'M5.5 12h.01M12 12h.01M18.5 12h.01',
   palette: 'M4 5h16M4 10h16M4 15h10M4 20h6',
@@ -342,10 +345,11 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
 }
 
 /**
- * The ⊕ create sheet — desktop's create menu (New note / template / database
+ * The ⊕ create sheet: desktop's create menu (New note / template / database
  * / folder) minus drawing (view-only on phones), with quick capture as the
- * hero first row. Daily note rides along when enabled: the home screen's
- * quick-action chips are hidden on phones, so this is its one-tap home.
+ * hero first row and New task beside New note (#101). Daily note rides along
+ * when enabled: the home screen's quick-action chips are hidden on phones, so
+ * this is its one-tap home.
  */
 function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
   const dailyEnabled = useSettingsSnapshot().dailyNotesEnabled
@@ -371,7 +375,7 @@ function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
               className="zn-mobile-sheet-row"
               onClick={() => run(() => runCommand('note.new.quick'))}
             >
-              <Icon d={ICONS.capture} />
+              <Icon d={ICONS.quick} />
               Quick note
             </button>
             <button
@@ -381,6 +385,14 @@ function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
             >
               <Icon d={ICONS.note} />
               New note
+            </button>
+            <button
+              type="button"
+              className="zn-mobile-sheet-row"
+              onClick={() => run(() => runCommand('task.new'))}
+            >
+              <Icon d={ICONS.task} />
+              New task
             </button>
             {dailyEnabled && (
               <button
@@ -506,8 +518,18 @@ function MobileNav(): React.JSX.Element | null {
       : []),
     { label: 'More', icon: ICONS.more, run: () => setSheetOpen(true) },
     { label: 'Browse', icon: ICONS.sidebar, run: () => setDrawerOpen(true) },
-    { label: 'Search', icon: ICONS.search, run: showSearch },
-    { label: 'New', icon: ICONS.capture, run: () => setCreateOpen(true) }
+    { label: 'Search', icon: ICONS.search, run: showSearch }
+  ]
+
+  // Creating sits on the bottom edge beside the ensō, one tap each (#101), so
+  // the column above stays navigation and grows no taller for it. `+` is the
+  // full Create sheet, in the spot the New pill held, so the tap that opened
+  // Create still does, under the same name.
+  const createActions: Array<{ label: string; caption: string; icon: string; run: () => void }> = [
+    { label: 'Quick note', caption: 'Quick', icon: ICONS.quick, run: () => runCommand('note.new.quick') },
+    { label: 'New note', caption: 'Note', icon: ICONS.note, run: () => runCommand('note.new.inbox') },
+    { label: 'New task', caption: 'Task', icon: ICONS.task, run: () => runCommand('task.new') },
+    { label: 'New', caption: 'New…', icon: ICONS.capture, run: () => setCreateOpen(true) }
   ]
 
   return (
@@ -532,6 +554,25 @@ function MobileNav(): React.JSX.Element | null {
               >
                 {action.label}
                 <Icon d={action.icon} />
+              </button>
+            ))}
+          </div>
+          <div className="zn-mobile-fab-create" role="group" aria-label="Create">
+            {createActions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                aria-label={action.label}
+                onClick={() => {
+                  setFabOpen(false)
+                  // After the dial closes, the way the Create sheet runs its rows.
+                  window.setTimeout(action.run, 30)
+                }}
+              >
+                <span className="zn-mobile-fab-create-face">
+                  <Icon d={action.icon} />
+                </span>
+                {action.caption}
               </button>
             ))}
           </div>

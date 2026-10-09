@@ -167,7 +167,7 @@ const DirectUpload = registerPlugin<{
   }): Promise<{ status: number }>
 }>('ZenDirectUpload')
 
-const uploadObject: MobileObjectUpload = async (request) => {
+export const uploadObject: MobileObjectUpload = async (request) => {
   let response: { status: number }
   try {
     response = await DirectUpload.put({

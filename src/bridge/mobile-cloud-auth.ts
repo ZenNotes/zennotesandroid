@@ -22,6 +22,7 @@ import {
   type CloudAuthStorage
 } from '@zennotes/shared-domain/cloud-auth-flow'
 import { createCloudSyncClient, stopMobileCloudRequests, resumeMobileCloudRequests, mobileCloudRequestSignal } from './cloud-sync-client'
+import { publishWithStagedUploads, type CloudPublishAssetPlatform } from '@zennotes/shared-domain/cloud-publish-uploads'
 
 const DEVELOPMENT_CLOUD_BASE_URL = import.meta.env.VITE_ZENNOTES_CLOUD_DEV_URL?.trim()
 const PRODUCTION_CLOUD_BASE_URL = 'https://zennotes.org'
@@ -206,17 +207,22 @@ export async function listMobileCloudPublishedNotes(): Promise<CloudPublishedNot
   return (await authenticatedClient()).listPublishedNotes().then((response) => response.data)
 }
 
-export async function publishMobileCloudNote(
-  input: CloudPublishNoteInput
+/** Publish with the note's attachments staged straight to storage first
+ *  (shared-domain's publishWithStagedUploads); a service without staged
+ *  uploads gets the one-request publish. */
+export async function publishMobileCloudNote<Handle>(
+  input: CloudPublishNoteInput,
+  assets: CloudPublishAssetPlatform<Handle>
 ): Promise<CloudPublishedNoteResult> {
-  return (await authenticatedClient()).publishNote(input)
+  return await publishWithStagedUploads(await authenticatedClient(), input, assets)
 }
 
-export async function updateMobileCloudPublishedNote(
+export async function updateMobileCloudPublishedNote<Handle>(
   shareId: number,
-  input: CloudPublishNoteInput
+  input: CloudPublishNoteInput,
+  assets: CloudPublishAssetPlatform<Handle>
 ): Promise<CloudPublishedNoteResult> {
-  return (await authenticatedClient()).updatePublishedNote(shareId, input)
+  return await publishWithStagedUploads(await authenticatedClient(), input, assets, { shareId })
 }
 
 export async function unpublishMobileCloudNote(shareId: number): Promise<void> {

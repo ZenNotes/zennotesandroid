@@ -312,7 +312,7 @@ function uploadSessionId(initiation: CloudSyncUploadInitiationResponse): string 
     : null
 }
 
-function secureDirectUploadUrl(value: string): string {
+export function secureDirectUploadUrl(value: string): string {
   let url: URL
   try {
     url = new URL(value)

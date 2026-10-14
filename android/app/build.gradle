@@ -60,7 +60,7 @@ dependencies {
     testImplementation "junit:junit:$junitVersion"
     // Local unit tests only see android.jar's stubbed org.json; the shared
     // Cloud encryption vectors are read with the real library.
-    testImplementation "org.json:json:20250517"
+    testImplementation "org.json:json:20260814"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

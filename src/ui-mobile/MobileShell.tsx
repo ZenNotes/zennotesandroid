@@ -61,7 +61,7 @@ import ensoUrl from '../assets/enso.png'
 import { getStoragePref } from '../bridge/icloud'
 import { backgroundSyncEnabled, setBackgroundSyncEnabled } from '../bridge/background-sync'
 import { getPinnedNotes, loadPins } from './pins'
-import { installReadOpenGuard } from './read-open'
+import { installReadOpenGuard, openToRead } from './read-open'
 import { installPaletteHiddenRowGuard } from './palette-hidden-rows'
 import { placeVaultSettingsIsland, vaultSettingsAccessForLayout } from './vault-settings-access'
 import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
@@ -90,7 +90,13 @@ function isPhoneWidth(): boolean {
 /** Run a command from the shared registry by id (same path the palette uses). */
 function runCommand(id: string): void {
   void runAppCommand(id).catch(reportActionError)
+}
 
+/** Back through history lands on a note that is already there, to be read:
+ *  the keyboard stays down, as for the palette's Go Back (core 2.79). Both
+ *  the header chevron and Android's system Back go this way. */
+function goBackToRead(): void {
+  void openToRead(() => runAppCommand('nav.back')).catch(reportActionError)
 }
 
 function Icon({ d, filled }: { d: string; filled?: boolean }): React.JSX.Element {
@@ -1932,7 +1938,7 @@ function useHeaderBackButton(): void {
     if (!isPhoneWidth()) return
     let raf = 0
     const goBack = (): void => {
-      if (getShellSnapshot().canGoBack) runCommand('nav.back')
+      if (getShellSnapshot().canGoBack) goBackToRead()
       else goHome()
     }
     const apply = (): void => {
@@ -2036,7 +2042,7 @@ function useSystemBackClose(): void {
       if (isPhoneWidth()) {
         const s = getShellSnapshot()
         if (s.canGoBack) {
-          runCommand('nav.back')
+          goBackToRead()
           return
         }
         if (s.selectedPath !== null) {

@@ -1455,7 +1455,12 @@ const DESKTOP_ONLY_COMMAND_TITLES = [
   // core relaxes its gate (this shell reports runtime 'web' and inherits
   // whatever the web client is given).
   'What\u2019s New in ZenNotes',
-  'Review Agent Changes'
+  'Review Agent Changes',
+  // 2.79.0's Unsplash covers: core shows both rows only to a host with the
+  // Unsplash bridge methods, which this shell leaves out (no Unsplash tab on
+  // Android). Named for the same reason as the two above.
+  'Add Cover from Unsplash',
+  'Set Unsplash Access Key'
 ]
 
 /** Additionally hidden on phones: splits/panes and the (replaced) sidebar
@@ -1473,6 +1478,11 @@ const PHONE_ONLY_HIDDEN_COMMAND_TITLES = [
   'Show Tags in Sidebar',
   'Hide Tags in Sidebar',
   'Toggle Note List Column',
+  // The Timeline (core 2.79.0) is a right panel, so the phone draws it as a
+  // full-screen sheet like the others. Ticking works there, but a tap on a
+  // task opens its note behind the sheet with the keyboard raised, and the
+  // sheet stays up until Done. A tablet in the desktop layout keeps it.
+  'Toggle Timeline',
   // Drawings are view-only on phones — creating one opens an uneditable
   // canvas. ('New Drawing' also catches 'Embed New Drawing' via the
   // .includes row match; 'Embed Existing Drawing…' stays, embeds render.)

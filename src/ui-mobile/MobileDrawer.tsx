@@ -26,6 +26,8 @@ import { goHome } from './nav'
 import { usePins, toggleNotePin, toggleFolderPin } from './pins'
 import { archiveNote, openNoteMenu, trashNote } from './note-actions'
 import { refreshVault } from './refresh'
+import { openToRead } from './read-open'
+import { openDrawerRowToRead } from './drawer-open'
 import { SwipeRow } from './SwipeRow'
 import { drawerFileRows, fileExtensionLabel, type DrawerFileRow } from './browse-files'
 import { hiddenDrawerFolders } from './drawer-folders'
@@ -790,6 +792,16 @@ export function MobileDrawer(): React.JSX.Element | null {
     window.setTimeout(() => void action(), 30)
   }
 
+  // A row that opens what it lists (a note, a database, a file) opens it to
+  // be read, keyboard down, like core's lists (drawer-open.ts).
+  const read = (path: string): void => {
+    void openDrawerRowToRead(() => openNote(path), {
+      close,
+      wait: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+      openToRead
+    }).catch(reportActionError)
+  }
+
 
   return (
     <>
@@ -810,6 +822,7 @@ export function MobileDrawer(): React.JSX.Element | null {
       noteSortOrder={noteSortOrder}
       close={close}
       go={go}
+      read={read}
       onOpenVaults={() => openMobileSheet('vaults')}
     />
     </>
@@ -884,6 +897,7 @@ function MobileDrawerBody(props: {
   noteSortOrder: NoteSortOrder
   close: () => void
   go: (action: () => unknown) => void
+  read: (path: string) => void
 }): React.JSX.Element {
   const {
     vaultName,
@@ -901,7 +915,8 @@ function MobileDrawerBody(props: {
     childFiles,
     noteSortOrder,
     close,
-    go
+    go,
+    read
   } = props
   const lp = useLongPress()
   const [sortOpen, setSortOpen] = useState(false)
@@ -1185,7 +1200,7 @@ function MobileDrawerBody(props: {
               <button
                 key={tabPath}
                 type="button"
-                onClick={() => go(() => openNote(tabPath))}
+                onClick={() => read(tabPath)}
                 {...lp(() => setFolderMenu({ kind: 'database', subpath, name: title, host: captureMobileWorkspace() }))}
               >
                 <Icon d={D.database} />
@@ -1215,7 +1230,7 @@ function MobileDrawerBody(props: {
                 >
                   <button
                     type="button"
-                    onClick={() => go(() => openNote(n.path))}
+                    onClick={() => read(n.path)}
                     {...lp(() => openNoteMenu({ path: n.path, title: n.title, kind: 'note' }))}
                   >
                     <Icon d={D.note} />
@@ -1234,7 +1249,7 @@ function MobileDrawerBody(props: {
             {childFiles.map((file) => {
               const extension = fileExtensionLabel(file.name)
               return (
-                <button key={file.path} type="button" onClick={() => go(() => openNote(file.path))}>
+                <button key={file.path} type="button" onClick={() => read(file.path)}>
                   <Icon d={D.file} />
                   <span className="zn-truncate">{file.name}</span>
                   {extension && <span className="zn-mobile-drawer-ext">{extension}</span>}

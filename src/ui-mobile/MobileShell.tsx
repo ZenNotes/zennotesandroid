@@ -63,6 +63,7 @@ import { backgroundSyncEnabled, setBackgroundSyncEnabled } from '../bridge/backg
 import { getPinnedNotes, loadPins } from './pins'
 import { installReadOpenGuard, openToRead } from './read-open'
 import { installPaletteHiddenRowGuard } from './palette-hidden-rows'
+import { hideSettingsSectionRows } from './settings-sections'
 import { placeVaultSettingsIsland, vaultSettingsAccessForLayout } from './vault-settings-access'
 import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
 import {
@@ -1754,6 +1755,11 @@ function cleanSettingsContent(panel: HTMLElement): void {
         result.classList.add('zn-settings-hidden')
       }
     }
+    // The section list too: core rebuilds it when the search empties, so a
+    // hide done once at mount let MCP, CLI and Keymap back in after a clear
+    // (settings-sections.ts).
+    const aside = panel.querySelector('aside')
+    if (aside) hideSettingsSectionRows(aside, HIDDEN_SETTINGS_SECTIONS)
   }
   const hidden = hiddenSubTabTitles()
   const tabs = [...panel.querySelectorAll<HTMLElement>('[role="tab"]')]
@@ -1814,13 +1820,8 @@ function mobilizeSettingsPanel(panel: HTMLElement): void {
   const aside = panel.querySelector('aside')
   if (!aside) return
 
-  // Hide desktop-only nav entries (matched by their visible label). Category
-  // buttons are plain buttons in the scrollable list — not inside <nav>,
-  // which only wraps search results.
-  for (const btn of aside.querySelectorAll<HTMLElement>('button')) {
-    const label = (btn.textContent ?? '').trim()
-    if (HIDDEN_SETTINGS_SECTIONS.has(label)) btn.classList.add('zn-settings-hidden')
-  }
+  // Desktop-only nav entries are hidden by cleanSettingsContent, on every
+  // change, since core rebuilds this list when its search empties.
 
   // Any tap on a category row (or a search result) advances to the detail
   // page. Category rows live in `.space-y-0.5` groups; search results in nav.

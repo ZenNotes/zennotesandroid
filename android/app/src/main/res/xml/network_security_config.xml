@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Preserve plain-HTTP self-hosting support: this config takes precedence
+         over the manifest's usesCleartextTraffic flag. HTTPS still validates
+         certificates and hostnames, including CAs installed by the user. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+    <!-- ZenNotes Cloud stays on the system store alone, as it was before user
+         CAs were trusted. A CA in the user store, whether added for a home
+         server or pushed by a device manager, can then vouch for a self-hosted
+         server but never for Cloud, so it cannot read the account token or a
+         vault's notes in transit. Cloud never speaks plain HTTP either. These
+         are the hosts of PRODUCTION_CLOUD_BASE_URL and LEGACY_CLOUD_BASE_URL in
+         src/bridge/mobile-cloud-auth.ts (network-security-config.test.ts keeps
+         them in step). The object-storage hosts of presigned uploads and
+         downloads are named by the service at run time and are not listed. -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">zennotes.org</domain>
+        <domain includeSubdomains="true">zennotes.laravel.cloud</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

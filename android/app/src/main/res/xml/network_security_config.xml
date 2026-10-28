@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Preserve plain-HTTP self-hosting support: this config takes precedence
+         over the manifest's usesCleartextTraffic flag. HTTPS still validates
+         certificates and hostnames, including CAs installed by the user. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -23,10 +23,13 @@
  */
 import { Keyboard } from '@capacitor/keyboard'
 import { isPhoneViewport } from '../viewport'
-import { KeyboardHold } from './keyboard-hold'
+import { KeyboardHold, READ_OPEN_WAIT_MS } from './keyboard-hold'
+import { holdUntilSettled, type LandingEnd } from './landing-hold'
 import { FocusHealGate, pageEventOf } from './focus-heal'
 
 const hold = new KeyboardHold(() => Date.now())
+/** When the screen was last touched: a touch ends every hold. */
+let lastTouch = 0
 
 /** Core's note rows that open their note on a tap. */
 const READ_ROWS =
@@ -71,7 +74,14 @@ export function installReadOpenGuard(): void {
     },
     true
   )
-  document.addEventListener('pointerdown', () => hold.release(), true)
+  document.addEventListener(
+    'pointerdown',
+    () => {
+      lastTouch = Date.now()
+      hold.release()
+    },
+    true
+  )
   // Core's focus heal answers the window regaining focus and the page
   // becoming visible (focus-heal.ts). These listeners run in the capture
   // phase, before core's: leaving notes whether the editor was focused, and
@@ -113,4 +123,25 @@ export async function openToRead<T>(open: () => Promise<T>): Promise<T> {
   } finally {
     hold.opened()
   }
+}
+
+/** The restore landing (usePhoneLayoutBoot): hold the keyboard down from
+ *  before `land` runs until what it lands on is on screen, however long a
+ *  slow vault takes, up to landing-hold.ts's cap. */
+export function holdLanding(land: () => Promise<unknown>): Promise<LandingEnd | 'not-phone'> {
+  if (!isPhoneViewport()) return land().then(() => 'not-phone' as const)
+  const startedAt = Date.now()
+  let landed!: () => void
+  const settled = new Promise<void>((resolve) => { landed = resolve })
+  const ending = holdUntilSettled(hold, settled, {
+    rearmMs: READ_OPEN_WAIT_MS / 2,
+    clock: {
+      now: () => Date.now(),
+      set: (callback, ms) => window.setTimeout(callback, ms),
+      clear: (handle) => window.clearTimeout(handle as number)
+    },
+    touched: () => lastTouch >= startedAt
+  })
+  land().then(landed, landed)
+  return ending
 }

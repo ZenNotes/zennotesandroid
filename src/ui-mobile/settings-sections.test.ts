@@ -234,6 +234,14 @@ describe('the no-matches state', () => {
     assert.ok(modal.includes(`className: "${NO_MATCHES_CLASS}", children: "${NO_MATCHES_TEXT}"`))
   })
 
+  it('sits where core\'s own box sits, with no list spacing above it', () => {
+    // Core's results list spaces its children; the hidden results before the
+    // shell's box count as siblings there, so mobile.css takes that margin off.
+    assert.match(modal, /_jsxs\("nav", \{ className: "space-y-1", children: \[searchResults\.map/)
+    const css = readFileSync(new URL('./mobile.css', import.meta.url), 'utf8')
+    assert.match(css, new RegExp(`\\.zn-mobile nav > \\[${NO_MATCHES_ATTRIBUTE}\\] \\{\\s*margin-top: 0 !important;`))
+  })
+
   it('is synced on the results list after the hide, on every change', () => {
     const hide = clean.indexOf('hideSettingsSearchResults(')
     const sync = clean.indexOf("const results = panel.querySelector('aside nav')")

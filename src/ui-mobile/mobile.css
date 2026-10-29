@@ -47,6 +47,14 @@
   display: none !important;
 }
 
+/* The no-matches box the shell adds after a search's hidden results
+   (settings-sections.ts). Core's results list spaces its children with
+   space-y-1, which counts those hidden results as siblings, so the box sat
+   4px lower than core's own box for a search with no results at all. */
+.zn-mobile nav > [data-zn-settings-no-matches] {
+  margin-top: 0 !important;
+}
+
 /* Elements the settings cleaner hides (desktop-only affordances) — applies
    at every width, phone and iPad. */
 .zn-mobile .zn-settings-hidden {

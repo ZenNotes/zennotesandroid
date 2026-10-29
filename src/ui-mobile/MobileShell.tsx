@@ -63,7 +63,7 @@ import { backgroundSyncEnabled, setBackgroundSyncEnabled } from '../bridge/backg
 import { getPinnedNotes, loadPins } from './pins'
 import { installReadOpenGuard, openToRead } from './read-open'
 import { installPaletteHiddenRowGuard } from './palette-hidden-rows'
-import { hideSettingsSearchResults, hideSettingsSectionRows } from './settings-sections'
+import { hideSettingsSearchResults, hideSettingsSectionRows, syncNoMatchesState } from './settings-sections'
 import { placeVaultSettingsIsland, vaultSettingsAccessForLayout } from './vault-settings-access'
 import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
 import {
@@ -1762,6 +1762,10 @@ function cleanSettingsContent(panel: HTMLElement): void {
     ? new Set([...HIDDEN_SETTINGS_SECTIONS].map((label) => SETTINGS_SECTION_IDS[label]))
     : new Set<string>()
   hideSettingsSearchResults(panel, hiddenSectionIds, phone)
+  // Core shows its empty state only when nothing matched; every match hidden
+  // gets the same one (settings-sections.ts).
+  const results = panel.querySelector('aside nav')
+  if (results) syncNoMatchesState<HTMLDivElement>(results)
   if (phone) {
     // The section list too: core rebuilds it when the search empties, so a
     // hide done once at mount let MCP, CLI and Keymap back in after a clear

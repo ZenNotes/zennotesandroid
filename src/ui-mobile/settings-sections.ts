@@ -127,3 +127,46 @@ export function hideSettingsSearchResults(
     if (isHiddenSettingResult(category, title, hiddenSectionIds, phone)) result.classList.add(HIDDEN_SECTION_CLASS)
   }
 }
+
+/**
+ * Core's empty state for a search with no results, which core shows only when
+ * nothing matched at all. A search whose every match is hidden left an empty
+ * list instead; the shell adds the same element, copied from core's markup
+ * (settings-sections.test.ts checks it still matches), and takes it away as
+ * soon as a visible result is back.
+ */
+export const NO_MATCHES_TEXT = 'No settings match your search.'
+export const NO_MATCHES_CLASS = 'rounded-xl border border-dashed border-paper-300/70 px-3 py-4 text-sm text-ink-500'
+export const NO_MATCHES_ATTRIBUTE = 'data-zn-settings-no-matches'
+
+export interface NoMatchesNode {
+  className: string
+  textContent: string | null
+  setAttribute(name: string, value: string): void
+  remove(): void
+}
+
+export interface ResultsNav<N extends NoMatchesNode> {
+  querySelectorAll(selector: '[data-settings-result-category]'): Iterable<{
+    readonly classList: { contains(token: string): boolean }
+  }>
+  querySelector(selector: `[${typeof NO_MATCHES_ATTRIBUTE}]`): NoMatchesNode | null
+  appendChild(node: N): unknown
+  readonly ownerDocument: { createElement(tag: 'div'): N }
+}
+
+/** Show core's "No settings match your search." when every result is hidden. Safe to repeat. */
+export function syncNoMatchesState<N extends NoMatchesNode>(nav: ResultsNav<N>): void {
+  const results = [...nav.querySelectorAll('[data-settings-result-category]')]
+  const allHidden = results.length > 0 && results.every((row) => row.classList.contains(HIDDEN_SECTION_CLASS))
+  const shown = nav.querySelector(`[${NO_MATCHES_ATTRIBUTE}]`)
+  if (allHidden && !shown) {
+    const node = nav.ownerDocument.createElement('div')
+    node.className = NO_MATCHES_CLASS
+    node.textContent = NO_MATCHES_TEXT
+    node.setAttribute(NO_MATCHES_ATTRIBUTE, '')
+    nav.appendChild(node)
+  } else if (!allHidden && shown) {
+    shown.remove()
+  }
+}

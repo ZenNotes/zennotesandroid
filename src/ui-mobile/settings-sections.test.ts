@@ -4,6 +4,12 @@ import { describe, it } from 'node:test'
 import {
   HIDDEN_SECTION_CLASS,
   HIDDEN_SETTING_RESULTS,
+  NO_MATCHES_ATTRIBUTE,
+  NO_MATCHES_CLASS,
+  NO_MATCHES_TEXT,
+  syncNoMatchesState,
+  type NoMatchesNode,
+  type ResultsNav,
   hideSettingsSearchResults,
   hideSettingsSectionRows,
   isHiddenSettingResult,
@@ -149,5 +155,89 @@ describe('the hidden results list', () => {
     const shell = readFileSync(new URL('./MobileShell.tsx', import.meta.url), 'utf8')
     const clean = shell.slice(shell.indexOf('function cleanSettingsContent('), shell.indexOf('function mobilizeSettingsPanel('))
     assert.match(clean, /hideSettingsSearchResults\(panel, hiddenSectionIds, phone\)/)
+  })
+})
+
+/** A result button: hidden or not, as the shell left it. */
+class ShownResult {
+  readonly classes = new Set<string>()
+  readonly classList = { contains: (token: string) => this.classes.has(token) }
+  constructor(hidden: boolean) { if (hidden) this.classes.add(HIDDEN_SECTION_CLASS) }
+}
+
+class Marker implements NoMatchesNode {
+  className = ''
+  textContent: string | null = null
+  readonly attributes = new Map<string, string>()
+  parent: Nav | null = null
+  setAttribute(name: string, value: string): void { this.attributes.set(name, value) }
+  remove(): void {
+    if (!this.parent) return
+    this.parent.children = this.parent.children.filter((child) => child !== this)
+    this.parent = null
+  }
+}
+
+/** Core's results nav, holding result buttons and whatever the shell appended. */
+class Nav implements ResultsNav<Marker> {
+  results: ShownResult[] = []
+  children: Marker[] = []
+  readonly ownerDocument = { createElement: (): Marker => new Marker() }
+  querySelectorAll(): Iterable<ShownResult> { return this.results }
+  querySelector(): Marker | null { return this.children.find((child) => child.attributes.has(NO_MATCHES_ATTRIBUTE)) ?? null }
+  appendChild(node: Marker): void { node.parent = this; this.children.push(node) }
+}
+
+describe('syncNoMatchesState', () => {
+  it('shows core\'s empty state when every match is hidden ("updates" on a phone)', () => {
+    const nav = new Nav()
+    nav.results = [new ShownResult(true), new ShownResult(true)]
+    syncNoMatchesState(nav)
+    assert.equal(nav.children.length, 1)
+    assert.equal(nav.children[0]!.className, NO_MATCHES_CLASS)
+    assert.equal(nav.children[0]!.textContent, NO_MATCHES_TEXT)
+  })
+
+  it('adds it once however often the panel changes', () => {
+    const nav = new Nav()
+    nav.results = [new ShownResult(true)]
+    for (let i = 0; i < 3; i++) syncNoMatchesState(nav)
+    assert.equal(nav.children.length, 1)
+  })
+
+  it('takes it away as soon as a visible result is back', () => {
+    const nav = new Nav()
+    nav.results = [new ShownResult(true)]
+    syncNoMatchesState(nav)
+    nav.results = [new ShownResult(true), new ShownResult(false)]
+    syncNoMatchesState(nav)
+    assert.equal(nav.children.length, 0)
+  })
+
+  it('leaves a search with visible results, and one with none at all (core\'s own empty state), alone', () => {
+    const some = new Nav()
+    some.results = [new ShownResult(false), new ShownResult(true)]
+    syncNoMatchesState(some)
+    assert.equal(some.children.length, 0)
+    const none = new Nav()
+    syncNoMatchesState(none)
+    assert.equal(none.children.length, 0)
+  })
+})
+
+describe('the no-matches state', () => {
+  const modal = readFileSync(new URL('../../node_modules/@zennotes/app-core/dist/components/SettingsModal.js', import.meta.url), 'utf8')
+  const shell = readFileSync(new URL('./MobileShell.tsx', import.meta.url), 'utf8')
+  const clean = shell.slice(shell.indexOf('function cleanSettingsContent('), shell.indexOf('function mobilizeSettingsPanel('))
+
+  it('copies core\'s own empty state (a restyle or reword in core fails here at the next adoption)', () => {
+    assert.ok(modal.includes(`className: "${NO_MATCHES_CLASS}", children: "${NO_MATCHES_TEXT}"`))
+  })
+
+  it('is synced on the results list after the hide, on every change', () => {
+    const hide = clean.indexOf('hideSettingsSearchResults(')
+    const sync = clean.indexOf("const results = panel.querySelector('aside nav')")
+    assert.ok(hide >= 0 && sync > hide)
+    assert.match(clean, /if \(results\) syncNoMatchesState<HTMLDivElement>\(results\)/)
   })
 })

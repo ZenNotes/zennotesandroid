@@ -1425,6 +1425,19 @@
   padding-right: 0.625rem;
 }
 
+/* A palette list opened from a command (Themes..., a workflow, a vault) has
+   a "Back" row above its input, and Cancel's corner falls on that row: the
+   theme list's "Theme preview" caption ran under it. The row ends before
+   Cancel instead, and its caption wraps. */
+.zn-mobile.zn-phone .z-palette [role='dialog'] div:has(> button[aria-label='Back to commands']) {
+  padding-right: 5rem;
+}
+
+.zn-mobile.zn-phone .z-palette button[aria-label='Back to commands'] {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* Vault text search shows a desktop "VAULT TEXT SEARCH / <backend>" caption
    under the field; on a phone the placeholder already says what it is. */
 .zn-mobile.zn-phone .z-palette [role='dialog'] div:has(> input) > div[class*='uppercase'] {

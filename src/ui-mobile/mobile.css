@@ -737,6 +737,14 @@
   height: 2.75rem;
 }
 
+/* The folder Gallery's header (core 2.79) wraps its Sort and Include
+   subfolders controls under the title at phone width, growing from core's
+   min-h-12. Held to the pane header's height, the second line overflowed onto
+   the first row of cards. */
+.zn-mobile.zn-phone header.glass-header.flex-wrap {
+  height: auto;
+}
+
 /* Word-count status bar → gone (fits the ••• sheet's note info instead). */
 .zn-mobile.zn-phone div.h-8.px-6.text-xs {
   display: none;

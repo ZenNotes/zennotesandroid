@@ -33,7 +33,9 @@ let lastTouch = 0
 
 /** Core's note rows that open their note on a tap. */
 const READ_ROWS =
-  '[data-home-nav] [data-home-item], [data-task-row], [data-quick-row], [data-tag-row], [data-archive-row], [data-trash-row]'
+  '[data-home-nav] [data-home-item], [data-task-row], [data-quick-row], [data-tag-row], [data-archive-row], [data-trash-row], ' +
+  // The folder Gallery's cards (core 2.79), which open their note on a tap.
+  '[data-gallery-card]'
 /** Controls inside a row that do something else (tick, pin, delete). */
 const ROW_CONTROLS = 'button, a, input, [role="button"], [role="checkbox"]'
 

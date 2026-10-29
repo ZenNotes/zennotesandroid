@@ -24,6 +24,7 @@
 import { Keyboard } from '@capacitor/keyboard'
 import { isPhoneViewport } from '../viewport'
 import { KeyboardHold } from './keyboard-hold'
+import { FocusHealGate, pageEventOf } from './focus-heal'
 
 const hold = new KeyboardHold(() => Date.now())
 
@@ -71,6 +72,28 @@ export function installReadOpenGuard(): void {
     true
   )
   document.addEventListener('pointerdown', () => hold.release(), true)
+  // Core's focus heal answers the window regaining focus and the page
+  // becoming visible (focus-heal.ts). These listeners run in the capture
+  // phase, before core's: leaving notes whether the editor was focused, and
+  // coming back to a note that was being read holds the keyboard down
+  // through the heal's tries.
+  const gate = new FocusHealGate()
+  const editorFocused = (): boolean => {
+    const active = document.activeElement
+    return active instanceof Element && isEditor(active)
+  }
+  const holdThroughHeal = (event: Event): void => {
+    const kind = pageEventOf(event, window, document.visibilityState)
+    if (kind === 'leave') gate.left(editorFocused())
+    else if (kind === 'return' && gate.returned({ phone: isPhoneViewport(), editorFocused: editorFocused() })) {
+      hold.arm()
+      hold.opened()
+    }
+  }
+  window.addEventListener('blur', holdThroughHeal, true)
+  window.addEventListener('pagehide', holdThroughHeal, true)
+  window.addEventListener('focus', holdThroughHeal, true)
+  document.addEventListener('visibilitychange', holdThroughHeal, true)
   // After the pointerdown that released it: the row's own click arms it.
   document.addEventListener(
     'click',

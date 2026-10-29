@@ -2215,6 +2215,21 @@
   min-height: 44px;
 }
 
+/* The selection bar over a database table ("2 selected", Show only these in
+   this view, Delete, Clear) is one desktop line wider than a phone, and
+   Clear ran off its right edge. On a phone the count takes a line of its
+   own and the actions sit under it, wrapping again if a phone is narrower
+   still. The picks editor's bar (Editing picks, Update picks, Cancel)
+   carries the same attribute and gets the same two lines. */
+.zn-mobile.zn-phone [data-db-selection-bar] {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.zn-mobile.zn-phone [data-db-selection-bar] > span:first-child {
+  flex-basis: 100%;
+}
+
 /* Trash/Archive rows: Restore/Delete crowd the title on a phone — wrap the
    action buttons onto their own line under the note info. */
 .zn-mobile.zn-phone [data-trash-row],

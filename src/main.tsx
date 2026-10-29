@@ -29,6 +29,7 @@ import { mountMobileShell } from './ui-mobile/MobileShell'
 import { installHomeGuard } from './ui-mobile/nav'
 import { refreshVault } from './ui-mobile/refresh'
 import { isPhoneViewport, watchPhoneClass } from './viewport'
+import { waitAtBoot } from './boot-wait'
 import './ui-mobile/mobile.css'
 
 function wireKeyboard(): void {
@@ -78,8 +79,10 @@ function wireForegroundRescan(): void {
 }
 
 async function boot(): Promise<void> {
+  // Native answers boot can do without are bounded (boot-wait.ts), so a
+  // bridge call that never answers cannot leave a blank page.
   const appVersion = await loadNativeAppVersion()
-  await configureMobileCloudAuth(appVersion)
+  await waitAtBoot('Cloud sign-in links', configureMobileCloudAuth(appVersion))
   installMobileBridge()
   installBackgroundSync(mobileBackgroundSyncHost)
   // FIRST store subscriber, ahead of everything React mounts: the guard
@@ -97,7 +100,7 @@ async function boot(): Promise<void> {
   // notes land in the tier the user actually picked (iCloud vs. on-device).
   await maybeRunFirstRunOnboarding()
   await bootVault()
-  await importPendingShares().catch(() => 0)
+  await waitAtBoot('shared captures', importPendingShares().catch(() => 0))
 
   const root = document.getElementById('root')
   if (!root) throw new Error('Renderer root element #root was not found')

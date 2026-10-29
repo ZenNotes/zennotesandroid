@@ -12,6 +12,7 @@ import { relocateLocalVault } from '@zennotes/app-core/workspace'
  */
 import { registerPlugin } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
+import { waitAtBoot } from '../boot-wait'
 import { Clipboard } from '@capacitor/clipboard'
 import {
   installZenBridge,
@@ -160,8 +161,10 @@ let appVersion = '1.1.50'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {
-    const info = await CapApp.getInfo()
-    if (info.version) appVersion = info.version
+    // Bounded (boot-wait.ts): a late answer is dropped, so the version stays
+    // the package fallback Cloud sign-in is configured with below.
+    const info = await waitAtBoot('the app version', CapApp.getInfo())
+    if (info.inTime && info.value.version) appVersion = info.value.version
   } catch {
     // No native layer (browser dev server) — keep the package fallback.
   }

@@ -6,7 +6,7 @@
  * surface and the editor does not hold the DOM focus (App.tsx, desktop #350).
  * On a phone that store flag is also set by a note opened to read, where only
  * the DOM focus was refused, so the heal raised the keyboard over the note on
- * every return to the app, and after the reload a Settings Layout switch does.
+ * every return to the app.
  *
  * So the shell notes, as the app is left (the window's blur, the page going
  * hidden, pagehide), whether the editor held the focus. On the way back, a

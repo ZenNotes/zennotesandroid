@@ -38,6 +38,16 @@ const READ_ROWS =
   '[data-gallery-card]'
 /** Controls inside a row that do something else (tick, pin, delete). */
 const ROW_CONTROLS = 'button, a, input, [role="button"], [role="checkbox"]'
+/** Menu rows after which core hands the editor the focus (desktop wants the
+ *  caret back where it was), which on a phone is only the keyboard: the
+ *  callout type menu's rows (core 2.79, EditorPane), and Remove callout in the
+ *  editor menu. */
+const KEEP_DOWN_MENU_ROWS = '[data-ctx-menu][aria-label="Callout type"] [role^="menuitem"]'
+const KEEP_DOWN_MENU_LABELS = ['Remove callout']
+/** Find fields core focuses as their menu opens, so typing filters at once on
+ *  a desktop (DatabaseColumnsMenu, core 2.79). On a phone that focus is the
+ *  keyboard over the menu; a tap into the field still raises it. */
+const NO_AUTOFOCUS_FIELDS = 'input[aria-label="Find a column"]'
 
 function isEditor(el: Element): boolean {
   return el.closest('.cm-editor') !== null
@@ -52,6 +62,18 @@ function opensToRead(target: EventTarget | null): boolean {
   return !control || control === row || !row.contains(control) || control.matches('[aria-label^="Open "]')
 }
 
+/** A tap on a menu row whose pick core follows with an editor focus. */
+function keepsKeyboardDown(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false
+  if (target.closest(KEEP_DOWN_MENU_ROWS)) return true
+  const row = target.closest('[data-ctx-menu] [role^="menuitem"]')
+  return row !== null && KEEP_DOWN_MENU_LABELS.includes((row.textContent ?? '').trim())
+}
+
+/** The field the last touch went down on: a tap into a field focuses it
+ *  natively, so a focus() call on any other field is core's own. */
+let touchedField: Element | null = null
+
 let installed = false
 
 export function installReadOpenGuard(): void {
@@ -63,6 +85,7 @@ export function installReadOpenGuard(): void {
   const focus = HTMLElement.prototype.focus
   HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions): void {
     if (isEditor(this) && hold.refuse()) return
+    if (isPhoneViewport() && this.matches(NO_AUTOFOCUS_FIELDS) && touchedField !== this) return
     focus.call(this, options)
   }
   // Any other way focus lands in the editor while held, undone at once.
@@ -78,8 +101,9 @@ export function installReadOpenGuard(): void {
   )
   document.addEventListener(
     'pointerdown',
-    () => {
+    (event) => {
       lastTouch = Date.now()
+      touchedField = event.target instanceof Element ? event.target.closest(NO_AUTOFOCUS_FIELDS) : null
       hold.release()
     },
     true
@@ -110,7 +134,7 @@ export function installReadOpenGuard(): void {
   document.addEventListener(
     'click',
     (event) => {
-      if (isPhoneViewport() && opensToRead(event.target)) hold.arm()
+      if (isPhoneViewport() && (opensToRead(event.target) || keepsKeyboardDown(event.target))) hold.arm()
     },
     true
   )

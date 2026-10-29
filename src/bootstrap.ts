@@ -1,6 +1,8 @@
 import './random-uuid-polyfill'
 import { Preferences } from '@capacitor/preferences'
 import { BACKGROUND_SYNC_KEY, GESTURES_KEY, HIDE_STATUS_BAR_KEY, LAYOUT_MODE_KEY, START_SCREEN_KEY } from './viewport'
+import { waitAtBoot } from './boot-wait'
+import { applyNativePreferences, readNativePreferences, type MirroredPreference } from './boot-preferences'
 
 const WEB_PREFERENCES_KEY = 'zen:prefs:v2'
 const NATIVE_PREFERENCES_KEY = 'zn-app-preferences-v2'
@@ -58,49 +60,33 @@ function applyStoredTheme(rawPreferences: string): void {
   }
 }
 
+// Restored at boot, in this order: the app-core preferences first (their
+// theme is applied before anything draws), then the shell's own choices.
+const RESTORED_PREFERENCES: readonly MirroredPreference[] = [
+  { web: WEB_PREFERENCES_KEY, native: NATIVE_PREFERENCES_KEY },
+  { web: LAYOUT_MODE_KEY, native: NATIVE_LAYOUT_MODE_KEY },
+  { web: HIDE_STATUS_BAR_KEY, native: NATIVE_HIDE_STATUS_BAR_KEY },
+  { web: GESTURES_KEY, native: NATIVE_GESTURES_KEY },
+  { web: START_SCREEN_KEY, native: NATIVE_START_SCREEN_KEY }
+]
+
+/** Put native values back into localStorage before the app reads them. A
+ *  native call that never answered once left a blank page after rapid Layout
+ *  reloads, so the reads are bounded (boot-wait.ts) and a late answer is
+ *  dropped whole (boot-preferences.ts says why). */
 async function restoreNativePreferences(): Promise<void> {
   try {
-    const nativePreferences = await Preferences.get({ key: NATIVE_PREFERENCES_KEY })
-    const webPreferences = localStorage.getItem(WEB_PREFERENCES_KEY)
-
-    if (nativePreferences.value) {
-      localStorage.setItem(WEB_PREFERENCES_KEY, nativePreferences.value)
-      applyStoredTheme(nativePreferences.value)
-    } else if (webPreferences) {
-      await Preferences.set({ key: NATIVE_PREFERENCES_KEY, value: webPreferences })
-    }
-
-    const nativeLayout = await Preferences.get({ key: NATIVE_LAYOUT_MODE_KEY })
-    const webLayout = localStorage.getItem(LAYOUT_MODE_KEY)
-    if (nativeLayout.value) {
-      localStorage.setItem(LAYOUT_MODE_KEY, nativeLayout.value)
-    } else if (webLayout) {
-      await Preferences.set({ key: NATIVE_LAYOUT_MODE_KEY, value: webLayout })
-    }
-
-    const nativeStatusBar = await Preferences.get({ key: NATIVE_HIDE_STATUS_BAR_KEY })
-    const webStatusBar = localStorage.getItem(HIDE_STATUS_BAR_KEY)
-    if (nativeStatusBar.value) {
-      localStorage.setItem(HIDE_STATUS_BAR_KEY, nativeStatusBar.value)
-    } else if (webStatusBar) {
-      await Preferences.set({ key: NATIVE_HIDE_STATUS_BAR_KEY, value: webStatusBar })
-    }
-
-    const nativeGestures = await Preferences.get({ key: NATIVE_GESTURES_KEY })
-    const webGestures = localStorage.getItem(GESTURES_KEY)
-    if (nativeGestures.value) {
-      localStorage.setItem(GESTURES_KEY, nativeGestures.value)
-    } else if (webGestures) {
-      await Preferences.set({ key: NATIVE_GESTURES_KEY, value: webGestures })
-    }
-
-    const nativeStartScreen = await Preferences.get({ key: NATIVE_START_SCREEN_KEY })
-    const webStartScreen = localStorage.getItem(START_SCREEN_KEY)
-    if (nativeStartScreen.value) {
-      localStorage.setItem(START_SCREEN_KEY, nativeStartScreen.value)
-    } else if (webStartScreen) {
-      await Preferences.set({ key: NATIVE_START_SCREEN_KEY, value: webStartScreen })
-    }
+    const answer = await waitAtBoot('native preferences', readNativePreferences(RESTORED_PREFERENCES, Preferences))
+    if (!answer.inTime) return
+    applyNativePreferences(
+      RESTORED_PREFERENCES,
+      answer.value,
+      window.localStorage,
+      (key, value) => enqueuePersistence(() => Preferences.set({ key, value })),
+      (pair, value) => {
+        if (pair.web === WEB_PREFERENCES_KEY) applyStoredTheme(value)
+      }
+    )
   } catch {
     // Continue with WebView storage when native preferences are unavailable.
   }

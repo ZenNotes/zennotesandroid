@@ -47,6 +47,14 @@
   display: none !important;
 }
 
+/* The no-matches box the shell adds after a search's hidden results
+   (settings-sections.ts). Core's results list spaces its children with
+   space-y-1, which counts those hidden results as siblings, so the box sat
+   4px lower than core's own box for a search with no results at all. */
+.zn-mobile nav > [data-zn-settings-no-matches] {
+  margin-top: 0 !important;
+}
+
 /* Elements the settings cleaner hides (desktop-only affordances) — applies
    at every width, phone and iPad. */
 .zn-mobile .zn-settings-hidden {
@@ -729,6 +737,14 @@
   height: 2.75rem;
 }
 
+/* The folder Gallery's header (core 2.79) wraps its Sort and Include
+   subfolders controls under the title at phone width, growing from core's
+   min-h-12. Held to the pane header's height, the second line overflowed onto
+   the first row of cards. */
+.zn-mobile.zn-phone header.glass-header.flex-wrap {
+  height: auto;
+}
+
 /* Word-count status bar → gone (fits the ••• sheet's note info instead). */
 .zn-mobile.zn-phone div.h-8.px-6.text-xs {
   display: none;
@@ -1407,6 +1423,19 @@
 
 .zn-mobile.zn-phone .z-palette [data-search-create-form] input {
   padding-right: 0.625rem;
+}
+
+/* A palette list opened from a command (Themes..., a workflow, a vault) has
+   a "Back" row above its input, and Cancel's corner falls on that row: the
+   theme list's "Theme preview" caption ran under it. The row ends before
+   Cancel instead, and its caption wraps. */
+.zn-mobile.zn-phone .z-palette [role='dialog'] div:has(> button[aria-label='Back to commands']) {
+  padding-right: 5rem;
+}
+
+.zn-mobile.zn-phone .z-palette button[aria-label='Back to commands'] {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* Vault text search shows a desktop "VAULT TEXT SEARCH / <backend>" caption
@@ -2184,6 +2213,21 @@
 .zn-mobile.zn-phone div[class*='min-h-0'][class*='overflow-auto'] table td,
 .zn-mobile.zn-phone div[class*='min-h-0'][class*='overflow-auto'] table th {
   min-height: 44px;
+}
+
+/* The selection bar over a database table ("2 selected", Show only these in
+   this view, Delete, Clear) is one desktop line wider than a phone, and
+   Clear ran off its right edge. On a phone the count takes a line of its
+   own and the actions sit under it, wrapping again if a phone is narrower
+   still. The picks editor's bar (Editing picks, Update picks, Cancel)
+   carries the same attribute and gets the same two lines. */
+.zn-mobile.zn-phone [data-db-selection-bar] {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.zn-mobile.zn-phone [data-db-selection-bar] > span:first-child {
+  flex-basis: 100%;
 }
 
 /* Trash/Archive rows: Restore/Delete crowd the title on a phone — wrap the

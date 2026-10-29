@@ -61,7 +61,10 @@ import ensoUrl from '../assets/enso.png'
 import { getStoragePref } from '../bridge/icloud'
 import { backgroundSyncEnabled, setBackgroundSyncEnabled } from '../bridge/background-sync'
 import { getPinnedNotes, loadPins } from './pins'
-import { installReadOpenGuard } from './read-open'
+import { holdLanding, installReadOpenGuard, openToRead } from './read-open'
+import { LANDING_HOLD_CAP_MS } from './landing-hold'
+import { installPaletteHiddenRowGuard } from './palette-hidden-rows'
+import { hideSettingsSearchResults, hideSettingsSectionRows, syncNoMatchesState } from './settings-sections'
 import { placeVaultSettingsIsland, vaultSettingsAccessForLayout } from './vault-settings-access'
 import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
 import {
@@ -89,7 +92,13 @@ function isPhoneWidth(): boolean {
 /** Run a command from the shared registry by id (same path the palette uses). */
 function runCommand(id: string): void {
   void runAppCommand(id).catch(reportActionError)
+}
 
+/** Back through history lands on a note that is already there, to be read:
+ *  the keyboard stays down, as for the palette's Go Back (core 2.79). Both
+ *  the header chevron and Android's system Back go this way. */
+function goBackToRead(): void {
+  void openToRead(() => runAppCommand('nav.back')).catch(reportActionError)
 }
 
 function Icon({ d, filled }: { d: string; filled?: boolean }): React.JSX.Element {
@@ -765,6 +774,19 @@ function usePhoneLayoutBoot(): void {
       const edge = restored && !wasRestored
       wasRestored = restored
       if (!edge) return
+      // The landing is a note (or view) opened to read. Closing a restored
+      // sidebar that held the keyboard focus hands it to the editor (core's
+      // App, #353): after the Layout reload from the desktop layout, where the
+      // sidebar was open and focused, that raised the keyboard over the
+      // restored note with the caret before its raw "# Title". The hold lasts
+      // until the landing is on screen, however slow the vault
+      // (landing-hold.ts).
+      void holdLanding(async () => {
+        land()
+        await landingOnScreen()
+      }).catch(reportActionError)
+    }
+    const land = (): void => {
       // Panels close, and daily/weekly notes must not auto-summon the
       // calendar over a phone-sized editor (it's one tap away in •••).
       configureWorkspacePresentation({ sidebarVisible: false, noteListVisible: false, automaticCalendar: false })
@@ -793,6 +815,29 @@ function usePhoneLayoutBoot(): void {
     apply()
     return () => unsub()
   }, [])
+}
+
+/** Resolves once the landing has nothing left to load: at once for Home or
+ *  a view, and for a note once its editor is on screen (or at the cap). */
+function landingOnScreen(): Promise<void> {
+  if (getShellSnapshot().selectedPath === null) return Promise.resolve()
+  return new Promise((resolve) => {
+    const ready = (): boolean => document.querySelector('.zn-app-shell .cm-editor .cm-content') !== null
+    if (ready()) {
+      resolve()
+      return
+    }
+    const observer = new MutationObserver(() => {
+      if (!ready()) return
+      observer.disconnect()
+      resolve()
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    window.setTimeout(() => {
+      observer.disconnect()
+      resolve()
+    }, LANDING_HOLD_CAP_MS)
+  })
 }
 
 /**
@@ -1438,7 +1483,8 @@ function usePinchFontSize(): void {
  * Desktop-only commands that app-core registers without a runtime gate. None
  * of these can work on iOS (App Store owns updates; no app zoom, floating
  * windows, or PDF export pipeline) — hide their palette rows on any device
- * width. Matched by title prefix against each row's text.
+ * width. Matched by title prefix against each row's text. A hidden row never
+ * takes the highlight or Return (palette-hidden-rows.ts).
  */
 const DESKTOP_ONLY_COMMAND_TITLES = [
   'Open Help',
@@ -1455,7 +1501,12 @@ const DESKTOP_ONLY_COMMAND_TITLES = [
   // core relaxes its gate (this shell reports runtime 'web' and inherits
   // whatever the web client is given).
   'What\u2019s New in ZenNotes',
-  'Review Agent Changes'
+  'Review Agent Changes',
+  // 2.79.0's Unsplash covers: core shows both rows only to a host with the
+  // Unsplash bridge methods, which this shell leaves out (no Unsplash tab on
+  // Android). Named for the same reason as the two above.
+  'Add Cover from Unsplash',
+  'Set Unsplash Access Key'
 ]
 
 /** Additionally hidden on phones: splits/panes and the (replaced) sidebar
@@ -1473,6 +1524,11 @@ const PHONE_ONLY_HIDDEN_COMMAND_TITLES = [
   'Show Tags in Sidebar',
   'Hide Tags in Sidebar',
   'Toggle Note List Column',
+  // The Timeline (core 2.79.0) is a right panel, so the phone draws it as a
+  // full-screen sheet like the others. Ticking works there, but a tap on a
+  // task opens its note behind the sheet with the keyboard raised, and the
+  // sheet stays up until Done. A tablet in the desktop layout keeps it.
+  'Toggle Timeline',
   // Drawings are view-only on phones — creating one opens an uneditable
   // canvas. ('New Drawing' also catches 'Embed New Drawing' via the
   // .includes row match; 'Embed Existing Drawing…' stays, embeds render.)
@@ -1725,17 +1781,26 @@ function hiddenSubTabTitles(): Set<string> {
  * block (themes are ~/.config folders — a desktop workflow).
  */
 function cleanSettingsContent(panel: HTMLElement): void {
-  // Settings search lists the settings of every section, the hidden ones
-  // too: "review" offered Review agent edits, and a tap opened the MCP page
-  // the section list hides. Hide those results where the list hides their
-  // section (phone width, as below).
-  if (isPhoneWidth()) {
-    const hiddenIds = new Set([...HIDDEN_SETTINGS_SECTIONS].map((label) => SETTINGS_SECTION_IDS[label]))
-    for (const result of panel.querySelectorAll<HTMLElement>('[data-settings-result-category]')) {
-      if (hiddenIds.has(result.dataset.settingsResultCategory ?? '')) {
-        result.classList.add('zn-settings-hidden')
-      }
-    }
+  // Settings search lists the settings of every section and sub-tab, the
+  // hidden ones too: "review" offered Review agent edits and a tap opened the
+  // MCP page the section list hides; "key" offered the Vim and Quick capture
+  // settings whose sub-tabs are hidden. Hide every result that opens a hidden
+  // section (phone width, as below), sub-tab or row (settings-sections.ts).
+  const phone = isPhoneWidth()
+  const hiddenSectionIds = phone
+    ? new Set([...HIDDEN_SETTINGS_SECTIONS].map((label) => SETTINGS_SECTION_IDS[label]))
+    : new Set<string>()
+  hideSettingsSearchResults(panel, hiddenSectionIds, phone)
+  // Core shows its empty state only when nothing matched; every match hidden
+  // gets the same one (settings-sections.ts).
+  const results = panel.querySelector('aside nav')
+  if (results) syncNoMatchesState<HTMLDivElement>(results)
+  if (phone) {
+    // The section list too: core rebuilds it when the search empties, so a
+    // hide done once at mount let MCP, CLI and Keymap back in after a clear
+    // (settings-sections.ts).
+    const aside = panel.querySelector('aside')
+    if (aside) hideSettingsSectionRows(aside, HIDDEN_SETTINGS_SECTIONS)
   }
   const hidden = hiddenSubTabTitles()
   const tabs = [...panel.querySelectorAll<HTMLElement>('[role="tab"]')]
@@ -1796,13 +1861,8 @@ function mobilizeSettingsPanel(panel: HTMLElement): void {
   const aside = panel.querySelector('aside')
   if (!aside) return
 
-  // Hide desktop-only nav entries (matched by their visible label). Category
-  // buttons are plain buttons in the scrollable list — not inside <nav>,
-  // which only wraps search results.
-  for (const btn of aside.querySelectorAll<HTMLElement>('button')) {
-    const label = (btn.textContent ?? '').trim()
-    if (HIDDEN_SETTINGS_SECTIONS.has(label)) btn.classList.add('zn-settings-hidden')
-  }
+  // Desktop-only nav entries are hidden by cleanSettingsContent, on every
+  // change, since core rebuilds this list when its search empties.
 
   // Any tap on a category row (or a search result) advances to the detail
   // page. Category rows live in `.space-y-0.5` groups; search results in nav.
@@ -1920,7 +1980,7 @@ function useHeaderBackButton(): void {
     if (!isPhoneWidth()) return
     let raf = 0
     const goBack = (): void => {
-      if (getShellSnapshot().canGoBack) runCommand('nav.back')
+      if (getShellSnapshot().canGoBack) goBackToRead()
       else goHome()
     }
     const apply = (): void => {
@@ -2024,7 +2084,7 @@ function useSystemBackClose(): void {
       if (isPhoneWidth()) {
         const s = getShellSnapshot()
         if (s.canGoBack) {
-          runCommand('nav.back')
+          goBackToRead()
           return
         }
         if (s.selectedPath !== null) {
@@ -2651,9 +2711,12 @@ function useFullscreenChrome(): void {
   }, [])
 }
 
+// Android's own bars. Core's Status bar switch (under Chrome, on the same
+// page) is ZenNotes' bar along the bottom, so this row names the top one by
+// where it is rather than calling it a status bar too.
 const SYSTEM_BARS_CHOICES: { mode: SystemBarsMode; label: string }[] = [
   { mode: 'shown', label: 'Shown' },
-  { mode: 'status-hidden', label: 'No status bar' },
+  { mode: 'status-hidden', label: 'No top bar' },
   { mode: 'immersive', label: 'Immersive' }
 ]
 
@@ -2669,8 +2732,9 @@ function SettingsSystemBarsRow(): React.JSX.Element {
       <div className="zn-settings-layout-text">
         <div className="zn-settings-layout-title">System bars</div>
         <div className="zn-settings-layout-desc">
-          Hide the status bar for more room, or go immersive to hide the
-          navigation bar too. Swipe from a hidden bar’s edge to peek at it.
+          Hide Android’s status bar along the top (the clock and icons) for
+          more room, or go immersive to hide the navigation bar too. Swipe
+          from a hidden bar’s edge to peek at it.
         </div>
       </div>
       <div className="zn-settings-layout-seg" role="radiogroup" aria-label="System bars">
@@ -3151,6 +3215,7 @@ function MobileShellRoot(): React.JSX.Element {
 export function mountMobileShell(): void {
   document.documentElement.classList.add('zn-mobile')
   installReadOpenGuard()
+  installPaletteHiddenRowGuard()
   // Pin state loads async from native Preferences; the drawer re-renders via
   // the pins subscription when it lands.
   void loadPins()

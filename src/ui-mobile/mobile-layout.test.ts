@@ -121,3 +121,21 @@ test("the Calendar sheet is the date calendar's full-screen phone sheet, with fi
   assert.ok(groupedDeclaration(panel, 'width')?.includes('100vw'))
   assert.equal(groupedDeclaration('.zn-mobile.zn-phone .zn-calendar-sheet button[data-cal-day]', 'min-height'), '42px')
 })
+
+test('a palette sub-list\'s Back row ends before the shell\'s Cancel', () => {
+  assert.equal(declaration(".zn-mobile.zn-phone .z-palette [role='dialog'] div:has(> button[aria-label='Back to commands'])", 'padding-right'), '5rem')
+  // The caption wraps; "‹ Back" stays on one line beside it.
+  assert.equal(declaration(".zn-mobile.zn-phone .z-palette button[aria-label='Back to commands']", 'white-space'), 'nowrap')
+  assert.equal(declaration(".zn-mobile.zn-phone .z-palette button[aria-label='Back to commands']", 'flex-shrink'), '0')
+  const palette = readFileSync(new URL('../../node_modules/@zennotes/app-core/dist/components/CommandPalette.js', import.meta.url), 'utf8')
+  assert.match(palette, /"aria-label": "Back to commands"/)
+})
+
+test("a database's selection bar fits a phone: the count on its own line, the actions under it", () => {
+  assert.equal(declaration('.zn-mobile.zn-phone [data-db-selection-bar]', 'flex-wrap'), 'wrap')
+  assert.equal(declaration('.zn-mobile.zn-phone [data-db-selection-bar] > span:first-child', 'flex-basis'), '100%')
+  // Both of core's bars (rows selected, and editing picks) open with the count's span.
+  const table = readFileSync(new URL('../../node_modules/@zennotes/app-core/dist/components/DatabaseTableView.js', import.meta.url), 'utf8')
+  assert.equal(table.match(/"data-db-selection-bar": true, className: "flex [^"]*", children: \[_jsxs\("span"/g)?.length, 2)
+  assert.match(table, /children: "Clear"/)
+})

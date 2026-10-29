@@ -2,6 +2,7 @@ import { captureMobileWorkspace } from './workspace-context'
 import { installEditorHost, type EditorAssetImporter, type EditorHostRegistration } from '@zennotes/app-core/editor'
 import { activeVault } from '../bridge/mobile-bridge'
 import { selectionToolbarInset } from './selection-toolbar-space'
+import { isPhoneViewport } from '../viewport'
 
 let registration: EditorHostRegistration | null = null
 let owners = 0
@@ -10,6 +11,11 @@ export function installMobileEditorHost(): () => void {
   owners += 1
   if (!registration) registration = installEditorHost({
     nativeTyping: true,
+    // The phone layout opens notes to read: a search pick or a palette command
+    // that goes to a note leaves the keyboard down, and a palette toggle or a
+    // palette closed without a pick leaves the focus where it was (core 2.79).
+    // Tablets in the desktop layout keep core's focus.
+    openNotesToRead: isPhoneViewport,
     measureBottomInsets: viewport => {
       const selection = document.documentElement.classList.contains('zn-phone')
         ? document.querySelector<HTMLElement>('[data-selection-toolbar]') : null

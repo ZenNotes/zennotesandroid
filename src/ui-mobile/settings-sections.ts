@@ -28,3 +28,102 @@ export function hideSettingsSectionRows(aside: SectionList, hidden: ReadonlySet<
     if (hidden.has((row.textContent ?? '').trim())) row.classList.add(HIDDEN_SECTION_CLASS)
   }
 }
+
+/**
+ * Settings search results that open a page or a row the shell hides.
+ *
+ * Core lists the matching settings of every section and sub-tab, the hidden
+ * ones too, and marks each result only with its section
+ * (`data-settings-result-category`). A result for a hidden sub-tab (Vim,
+ * Quick capture, Search, Workflows, Folders) or a hidden row opened a page
+ * without it: "key" offered Exit insert mode with and Quick capture hotkey.
+ * With no sub-tab or setting marker on the result, these are matched by
+ * section and title, copied from core's subTabs searchIds and from the rows
+ * mobile.css hides (settings-sections.test.ts checks every title is still
+ * in the installed core). A data-settings-result-tab marker in core would
+ * let this list go.
+ */
+export interface HiddenSettingResult {
+  /** The result's section, as `data-settings-result-category` names it. */
+  readonly category: string
+  readonly title: string
+  /** Hidden only in the phone layout; a tablet in the desktop layout shows it. */
+  readonly phoneOnly?: boolean
+}
+
+const phoneOnly = (category: string, titles: string[]): HiddenSettingResult[] =>
+  titles.map((title) => ({ category, title, phoneOnly: true }))
+const always = (category: string, titles: string[]): HiddenSettingResult[] =>
+  titles.map((title) => ({ category, title }))
+
+export const HIDDEN_SETTING_RESULTS: readonly HiddenSettingResult[] = [
+  // Editor's Search, Quick capture and Workflows sub-tabs, at any width.
+  ...always('editor', ['Show tagged blocks in note search', 'Vault text search backend', 'ripgrep binary path', 'fzf binary path']),
+  ...always('editor', ['Quick capture hotkey']),
+  ...always('editor', ['Workflows', 'Event triggers', 'Built-in recipes', 'Guided tutorial']),
+  // Rows mobile.css hides at any width.
+  ...always('about', ['Updates']),
+  ...always('appearance', ['Use theme for PDF export']),
+  // Editor's Vim sub-tab and Vault's Folders sub-tab, on phones.
+  ...phoneOnly('editor', [
+    'Vim mode',
+    'Wrapped line motions',
+    'Exit insert mode with',
+    'Sync clipboard with Vim registers',
+    'Keep the input method out of normal mode',
+    'Leader key hints',
+    'Leader hint behavior',
+    'Leader hint duration',
+    'Scroll offset'
+  ]),
+  ...phoneOnly('vault', [
+    'Inbox label',
+    'Quick Notes label',
+    'Archive label',
+    'Trash label',
+    'Tasks label',
+    'Inbox path',
+    'Quick Notes path',
+    'Archive path',
+    'Trash path'
+  ]),
+  // Rows mobile.css hides on phones.
+  ...phoneOnly('vault', ['Primary notes location', 'View settings', 'Default drawings location']),
+  ...phoneOnly('appearance', ['Dark sidebar', 'Sidebar arrows', 'Title bar'])
+]
+
+export interface SearchResultRow {
+  readonly dataset: { settingsResultCategory?: string }
+  readonly classList: { add(token: string): void }
+  querySelector(selector: '.font-medium'): { readonly textContent: string | null } | null
+}
+
+export interface SearchResultList {
+  querySelectorAll(selector: '[data-settings-result-category]'): Iterable<SearchResultRow>
+}
+
+/** Whether a result opens a section, sub-tab or row the shell hides. */
+export function isHiddenSettingResult(
+  category: string,
+  title: string,
+  hiddenSectionIds: ReadonlySet<string>,
+  phone: boolean
+): boolean {
+  if (hiddenSectionIds.has(category)) return true
+  return HIDDEN_SETTING_RESULTS.some(
+    (entry) => entry.category === category && entry.title === title && (phone || !entry.phoneOnly)
+  )
+}
+
+/** Hide every search result that would open a hidden page or row. Safe to repeat. */
+export function hideSettingsSearchResults(
+  panel: SearchResultList,
+  hiddenSectionIds: ReadonlySet<string>,
+  phone: boolean
+): void {
+  for (const result of panel.querySelectorAll('[data-settings-result-category]')) {
+    const category = result.dataset.settingsResultCategory ?? ''
+    const title = (result.querySelector('.font-medium')?.textContent ?? '').trim()
+    if (isHiddenSettingResult(category, title, hiddenSectionIds, phone)) result.classList.add(HIDDEN_SECTION_CLASS)
+  }
+}

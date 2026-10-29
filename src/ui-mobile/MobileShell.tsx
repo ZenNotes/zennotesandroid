@@ -63,7 +63,7 @@ import { backgroundSyncEnabled, setBackgroundSyncEnabled } from '../bridge/backg
 import { getPinnedNotes, loadPins } from './pins'
 import { installReadOpenGuard, openToRead } from './read-open'
 import { installPaletteHiddenRowGuard } from './palette-hidden-rows'
-import { hideSettingsSectionRows } from './settings-sections'
+import { hideSettingsSearchResults, hideSettingsSectionRows } from './settings-sections'
 import { placeVaultSettingsIsland, vaultSettingsAccessForLayout } from './vault-settings-access'
 import { getLayoutMode, isPhoneViewport, setLayoutMode, type LayoutMode } from '../viewport'
 import {
@@ -1744,17 +1744,17 @@ function hiddenSubTabTitles(): Set<string> {
  * block (themes are ~/.config folders — a desktop workflow).
  */
 function cleanSettingsContent(panel: HTMLElement): void {
-  // Settings search lists the settings of every section, the hidden ones
-  // too: "review" offered Review agent edits, and a tap opened the MCP page
-  // the section list hides. Hide those results where the list hides their
-  // section (phone width, as below).
-  if (isPhoneWidth()) {
-    const hiddenIds = new Set([...HIDDEN_SETTINGS_SECTIONS].map((label) => SETTINGS_SECTION_IDS[label]))
-    for (const result of panel.querySelectorAll<HTMLElement>('[data-settings-result-category]')) {
-      if (hiddenIds.has(result.dataset.settingsResultCategory ?? '')) {
-        result.classList.add('zn-settings-hidden')
-      }
-    }
+  // Settings search lists the settings of every section and sub-tab, the
+  // hidden ones too: "review" offered Review agent edits and a tap opened the
+  // MCP page the section list hides; "key" offered the Vim and Quick capture
+  // settings whose sub-tabs are hidden. Hide every result that opens a hidden
+  // section (phone width, as below), sub-tab or row (settings-sections.ts).
+  const phone = isPhoneWidth()
+  const hiddenSectionIds = phone
+    ? new Set([...HIDDEN_SETTINGS_SECTIONS].map((label) => SETTINGS_SECTION_IDS[label]))
+    : new Set<string>()
+  hideSettingsSearchResults(panel, hiddenSectionIds, phone)
+  if (phone) {
     // The section list too: core rebuilds it when the search empties, so a
     // hide done once at mount let MCP, CLI and Keymap back in after a clear
     // (settings-sections.ts).

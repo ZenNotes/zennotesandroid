@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
-import { HIDDEN_SECTION_CLASS, hideSettingsSectionRows, type SectionList, type SectionRow } from './settings-sections.ts'
+import {
+  HIDDEN_SECTION_CLASS,
+  HIDDEN_SETTING_RESULTS,
+  hideSettingsSearchResults,
+  hideSettingsSectionRows,
+  isHiddenSettingResult,
+  type SearchResultList,
+  type SearchResultRow,
+  type SectionList,
+  type SectionRow
+} from './settings-sections.ts'
 
 class Row implements SectionRow {
   readonly classes = new Set<string>()
@@ -56,5 +66,88 @@ describe('the Settings mobilizer', () => {
 
   it('hides the section rows in the cleanup that re-runs on every change', () => {
     assert.match(clean, /hideSettingsSectionRows\(aside, HIDDEN_SETTINGS_SECTIONS\)/)
+  })
+})
+
+const PHONE_SECTION_IDS = new Set(['mcp', 'cli', 'keymaps'])
+
+class Result implements SearchResultRow {
+  readonly classes = new Set<string>()
+  readonly classList = { add: (token: string) => { this.classes.add(token) } }
+  readonly dataset: { settingsResultCategory?: string }
+  readonly title: string
+  constructor(category: string, title: string) {
+    this.dataset = { settingsResultCategory: category }
+    this.title = title
+  }
+  querySelector(): { textContent: string } { return { textContent: ` ${this.title} ` } }
+  get hidden(): boolean { return this.classes.has(HIDDEN_SECTION_CLASS) }
+}
+
+describe('isHiddenSettingResult', () => {
+  it('hides the settings of a sub-tab the phone hides ("key" listed Vim and Quick capture)', () => {
+    assert.equal(isHiddenSettingResult('editor', 'Exit insert mode with', PHONE_SECTION_IDS, true), true)
+    assert.equal(isHiddenSettingResult('editor', 'Leader key hints', PHONE_SECTION_IDS, true), true)
+    assert.equal(isHiddenSettingResult('editor', 'Quick capture hotkey', PHONE_SECTION_IDS, true), true)
+    assert.equal(isHiddenSettingResult('vault', 'Inbox label', PHONE_SECTION_IDS, true), true)
+  })
+
+  it('hides every result of a hidden section', () => {
+    assert.equal(isHiddenSettingResult('mcp', 'Review agent edits', PHONE_SECTION_IDS, true), true)
+    assert.equal(isHiddenSettingResult('keymaps', 'Keymap', PHONE_SECTION_IDS, true), true)
+  })
+
+  it('keeps the results of visible sections and rows', () => {
+    assert.equal(isHiddenSettingResult('appearance', 'Status bar', PHONE_SECTION_IDS, true), false)
+    assert.equal(isHiddenSettingResult('cloud', 'End-to-end encryption', PHONE_SECTION_IDS, true), false)
+    assert.equal(isHiddenSettingResult('editor', 'Quick Note prefix', PHONE_SECTION_IDS, true), false)
+  })
+
+  it('needs the section as well as the title', () => {
+    assert.equal(isHiddenSettingResult('appearance', 'Vim mode', PHONE_SECTION_IDS, true), false)
+  })
+
+  it('gives a tablet back the Vim and Folders settings but not the desktop-only ones', () => {
+    assert.equal(isHiddenSettingResult('editor', 'Vim mode', new Set(), false), false)
+    assert.equal(isHiddenSettingResult('vault', 'Inbox label', new Set(), false), false)
+    assert.equal(isHiddenSettingResult('editor', 'Quick capture hotkey', new Set(), false), true)
+    assert.equal(isHiddenSettingResult('about', 'Updates', new Set(), false), true)
+  })
+})
+
+describe('hideSettingsSearchResults', () => {
+  it('hides the results that lead to hidden pages and keeps the rest', () => {
+    const results = [
+      new Result('editor', 'Exit insert mode with'),
+      new Result('editor', 'Quick capture hotkey'),
+      new Result('editor', 'Keep the input method out of normal mode'),
+      new Result('cloud', 'End-to-end encryption'),
+      new Result('mcp', 'Review agent edits')
+    ]
+    const list: SearchResultList = { querySelectorAll: () => results }
+    hideSettingsSearchResults(list, PHONE_SECTION_IDS, true)
+    hideSettingsSearchResults(list, PHONE_SECTION_IDS, true) // on every change: harmless
+    assert.deepEqual(results.filter((r) => !r.hidden).map((r) => r.title), ['End-to-end encryption'])
+  })
+})
+
+describe('the hidden results list', () => {
+  const modal = readFileSync(new URL('../../node_modules/@zennotes/app-core/dist/components/SettingsModal.js', import.meta.url), 'utf8')
+
+  it('names titles the installed core still uses (a rename fails here at the next adoption)', () => {
+    const missing = HIDDEN_SETTING_RESULTS.filter((entry) => !modal.includes(`"${entry.title}"`)).map((entry) => entry.title)
+    assert.deepEqual(missing, [])
+  })
+
+  it('names sections the installed core has', () => {
+    for (const category of new Set(HIDDEN_SETTING_RESULTS.map((entry) => entry.category))) {
+      assert.ok(modal.includes(`id: "${category}"`), category)
+    }
+  })
+
+  it('is applied by the cleanup that re-runs on every change', () => {
+    const shell = readFileSync(new URL('./MobileShell.tsx', import.meta.url), 'utf8')
+    const clean = shell.slice(shell.indexOf('function cleanSettingsContent('), shell.indexOf('function mobilizeSettingsPanel('))
+    assert.match(clean, /hideSettingsSearchResults\(panel, hiddenSectionIds, phone\)/)
   })
 })

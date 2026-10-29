@@ -2682,9 +2682,12 @@ function useFullscreenChrome(): void {
   }, [])
 }
 
+// Android's own bars. Core's Status bar switch (under Chrome, on the same
+// page) is ZenNotes' bar along the bottom, so this row names the top one by
+// where it is rather than calling it a status bar too.
 const SYSTEM_BARS_CHOICES: { mode: SystemBarsMode; label: string }[] = [
   { mode: 'shown', label: 'Shown' },
-  { mode: 'status-hidden', label: 'No status bar' },
+  { mode: 'status-hidden', label: 'No top bar' },
   { mode: 'immersive', label: 'Immersive' }
 ]
 
@@ -2700,8 +2703,9 @@ function SettingsSystemBarsRow(): React.JSX.Element {
       <div className="zn-settings-layout-text">
         <div className="zn-settings-layout-title">System bars</div>
         <div className="zn-settings-layout-desc">
-          Hide the status bar for more room, or go immersive to hide the
-          navigation bar too. Swipe from a hidden bar’s edge to peek at it.
+          Hide Android’s status bar along the top (the clock and icons) for
+          more room, or go immersive to hide the navigation bar too. Swipe
+          from a hidden bar’s edge to peek at it.
         </div>
       </div>
       <div className="zn-settings-layout-seg" role="radiogroup" aria-label="System bars">

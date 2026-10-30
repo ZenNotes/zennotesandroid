@@ -14,6 +14,11 @@ import type {
   CloudSyncUploadRequest
 } from '@zennotes/bridge-contract/cloud-sync'
 import { zne1CiphertextLength, type Zne1ChunkCipherParams } from '@zennotes/shared-domain/cloud-e2ee'
+import {
+  CloudSyncPathRefusedError,
+  cloudSyncPathRefusal,
+  isCloudSyncUploadPathRefused
+} from '@zennotes/shared-domain/cloud-sync-refusal'
 
 export const CLOUD_SYNC_INLINE_UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024
 
@@ -157,27 +162,71 @@ export async function mutateWithMobileDirectUploads(
 
   const responses: CloudSyncMutationResponse[] = []
   let inlineMutations: CloudSyncMutation[] = []
+  let inlineIndices: number[] = []
+  // The batch goes out as several requests, so a path Cloud refuses in one of
+  // them (#1004) comes back after the earlier ones were applied. The refusal
+  // names positions in the batch this was given and carries what was applied,
+  // so sync commits that and resends only what went unanswered. A port of
+  // desktop's DesktopCloudSyncApiClient.mutate (core 2.80).
+  const refused = (error: unknown, indices: number[]): never => {
+    const refusal = indices.length === 1 && isCloudSyncUploadPathRefused(error)
+      ? cloudSyncPathRefusal(withMutationField(error, 0), { mutations: [body.mutations[indices[0]]] })
+      : cloudSyncPathRefusal(error, { mutations: indices.map((index) => body.mutations[index]) })
+    if (!refusal) throw error
+    throw new CloudSyncPathRefusedError(
+      { ...refusal, indices: refusal.indices.map((index) => indices[index]), applied: merged(responses) },
+      error
+    )
+  }
   const flushInline = async (): Promise<void> => {
     if (inlineMutations.length === 0) return
-    responses.push(await api.mutate(vaultId, { mutations: inlineMutations }))
+    try {
+      responses.push(await api.mutate(vaultId, { mutations: inlineMutations }))
+    } catch (error) {
+      refused(error, inlineIndices)
+    }
     inlineMutations = []
+    inlineIndices = []
   }
 
-  for (const mutation of body.mutations) {
+  for (const [index, mutation] of body.mutations.entries()) {
     if (direct(mutation)) {
       await flushInline()
-      responses.push(await directUpload(api, vaultId, mutation, uploadObject, cipher))
+      try {
+        responses.push(await directUpload(api, vaultId, mutation, uploadObject, cipher))
+      } catch (error) {
+        refused(error, [index])
+      }
     } else {
       inlineMutations.push(mutation)
+      inlineIndices.push(index)
     }
   }
   await flushInline()
 
+  return merged(responses)
+}
+
+function merged(responses: CloudSyncMutationResponse[]): CloudSyncMutationResponse {
   return {
     acknowledged: responses.flatMap((response) => response.acknowledged),
     conflicts: responses.flatMap((response) => response.conflicts),
     cursor: Math.max(0, ...responses.map((response) => response.cursor))
   }
+}
+
+/** A direct upload's refusal names its own request's `path`; as one mutation
+ *  of a batch it is that mutation's path. The copy keeps the error's class and
+ *  fields, only the refused field is renamed. */
+function withMutationField(error: unknown, index: number): unknown {
+  if (!isServiceError(error)) return error
+  const errors = error.details?.errors as Record<string, unknown> | undefined
+  const copy = Object.assign(Object.create(Object.getPrototypeOf(error) as object) as Error, error)
+  // An Error's message is its own property but not an enumerable one.
+  copy.message = (error as unknown as Error).message
+  return Object.assign(copy, {
+    details: { ...error.details, errors: { [`mutations.${index}.path`]: errors?.path ?? [] } }
+  })
 }
 
 function usesDirectUpload(mutation: CloudSyncMutation, encrypted: boolean): mutation is CloudSyncUpsertMutation {

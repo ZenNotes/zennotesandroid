@@ -114,7 +114,7 @@ export function createCloudSyncClient(baseUrl: string, token: string, options: M
               : `ZenNotes Cloud request failed (${response.status}).`),
           response.status,
           typeof error?.code === 'string' ? error.code : null,
-          isRecord(error?.details) ? error.details : null,
+          errorDetails(error?.details, response.data?.errors),
           response.headers ?? {}
         )
       }
@@ -262,6 +262,16 @@ function unanswered(error: unknown): CloudSyncTransportError {
 /** The object store never answered the PUT (a status means it did). */
 function unansweredUpload(error: unknown): boolean {
   return error instanceof MobileDirectUploadError && error.status === 0 && error.code === 'DIRECT_UPLOAD_FAILED'
+}
+
+/** The answer's error details, with a 422's field errors kept under
+ *  `details.errors`: which field Cloud refused (`mutations.3.path`) is only in
+ *  those keys, and sync needs it to set one refused path aside instead of
+ *  stopping the whole run (#1004, core 2.80; desktop's asErrorPayload). */
+export function errorDetails(details: unknown, errors: unknown): Record<string, unknown> | null {
+  const kept = isRecord(details) ? details : null
+  const fields = isRecord(errors) ? errors : null
+  return kept || fields ? { ...kept, ...(fields ? { errors: fields } : {}) } : null
 }
 
 function firstValidationMessage(errors: unknown): string | null {

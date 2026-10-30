@@ -139,3 +139,32 @@ test("a database's selection bar fits a phone: the count on its own line, the ac
   assert.equal(table.match(/"data-db-selection-bar": true, className: "flex [^"]*", children: \[_jsxs\("span"/g)?.length, 2)
   assert.match(table, /children: "Clear"/)
 })
+
+test('the corner where two scrollbars meet stays clear, as on the lanes board (core 2.80)', () => {
+  // Core styles ::-webkit-scrollbar but not its corner, which Chromium paints white.
+  assert.equal(declaration('.zn-mobile ::-webkit-scrollbar-corner', 'background'), 'transparent')
+})
+
+test('the Tasks Keys button stays off phones, and its sheet lists one group to a row (core 2.80)', () => {
+  const sheet = readFileSync(new URL('../../node_modules/@zennotes/app-core/dist/components/TasksToolbar.js', import.meta.url), 'utf8')
+  // Core's markup these rules hold to: the button's and the sheet's markers,
+  // the sheet's two-column grid, its chips as <kbd>.
+  assert.match(sheet, /"data-tasks-keys": true/)
+  assert.match(sheet, /"data-tasks-keys-popover": true/)
+  assert.match(sheet, /className: "grid grid-cols-2 gap-x-5 gap-y-3"/)
+  assert.match(sheet, /_jsx\("kbd", \{ className: "inline-flex min-w-5 justify-center whitespace-nowrap/)
+  assert.equal(declaration('.zn-mobile.zn-phone [data-tasks-keys]', 'display'), 'none')
+  assert.equal(declaration('.zn-mobile [data-tasks-keys-popover] > .grid', 'grid-template-columns'), 'minmax(0, 1fr)')
+  assert.equal(declaration('.zn-mobile [data-tasks-keys-popover] kbd', 'flex-shrink'), '0')
+})
+
+test("a card's subtask bar ends before the phone's move handle (core 2.80)", () => {
+  const kanban = readFileSync(new URL('../../node_modules/@zennotes/app-core/dist/components/TasksKanban.js', import.meta.url), 'utf8')
+  // The bar is core's full-width button inside the card; the handle is the
+  // shell's 30 px square 4 px from the card's bottom-right corner.
+  assert.match(kanban, /"data-kanban-progress": true/)
+  assert.match(kanban, /className: "group\/summary mt-1\.5 flex w-full items-center gap-2/)
+  assert.equal(declaration('.zn-phone .zn-kanban-move', 'width'), '30px')
+  assert.equal(declaration('.zn-phone .zn-kanban-move', 'right'), '4px')
+  assert.equal(declaration('.zn-mobile.zn-phone [data-kanban-task-id] [data-kanban-progress]', 'padding-right'), '34px')
+})

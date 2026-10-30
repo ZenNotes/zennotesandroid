@@ -157,7 +157,7 @@ import {
 import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
 import { isPhoneViewport } from '../viewport'
 
-let appVersion = '1.1.50'
+let appVersion = '1.1.51'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {
@@ -406,6 +406,10 @@ const MOBILE_CAPABILITIES: ZenCapabilities = {
   supportsCloudSync: true,
   supportsCliInstall: false,
   supportsCustomTemplates: true,
+  // vault.json's template folder (#1024) survives a save from this device
+  // (vault-fs.ts normalizes it as desktop does) and a folder rename follows
+  // it. A self-hosted vault answers with its server's own flag instead.
+  supportsTemplateFolder: true,
   // TextMate grammar import is a desktop feature for now: grammars are
   // per-app (not per-vault), so nothing desyncs by gating this off. The
   // Settings section hides itself behind this flag.

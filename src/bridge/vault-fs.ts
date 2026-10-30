@@ -32,8 +32,15 @@ import {
   isPathExcludedFromTasks,
   normalizeTasksExcludedFolders,
   normalizeTasksIncludedFolders,
-  rewriteTasksFoldersForRename
+  rewriteTasksFoldersForRename,
+  tasksFolderListsForSettings
 } from '@zennotes/shared-domain/tasks-excluded-folders'
+import {
+  isPathInTemplateFolder,
+  normalizeTemplateFolderSettings,
+  resolveTemplateFolder,
+  rewriteTemplateFolderForRename
+} from '@zennotes/shared-domain/template-folder'
 import { isFormDirName, isDatabaseInternalPath } from '@zennotes/shared-domain/databases'
 import { emptyExcalidrawDocument } from '@zennotes/shared-domain/excalidraw'
 import { pastedImageFilename } from '@zennotes/shared-domain/pasted-image'
@@ -377,6 +384,13 @@ export class MobileVault {
     const tasks = normalizeTasksSettings(obj.tasks)
     if (tasks) out.tasks = tasks
     else delete out.tasks
+    // The template folder (#1024), validated as desktop validates it. Passing
+    // the key through untouched would keep a desktop user's folder, but also a
+    // hand-edited `../x` or an empty stub; normalizing drops those the way
+    // every other host does.
+    const templates = normalizeTemplateFolderSettings(obj.templates)
+    if (templates) out.templates = templates
+    else delete out.templates
     return out
   }
 
@@ -1071,7 +1085,10 @@ export class MobileVault {
       // The Tasks folder lists name on-disk paths, so they follow the folder
       // too, as on desktop: a renamed Task folder (#962) left behind would
       // match nothing and empty Tasks.
-      tasks: rewriteTasksFoldersForRename(settings.tasks, oldRel, newRel)
+      tasks: rewriteTasksFoldersForRename(settings.tasks, oldRel, newRel),
+      // So does the template folder (#1024), or its notes would turn back
+      // into ordinary notes, their checkboxes into tasks.
+      templates: rewriteTemplateFolderForRename(settings.templates, oldRel, newRel)
       })
       } catch (error) {
         try {
@@ -1219,14 +1236,18 @@ export class MobileVault {
     const candidates: SearchCandidate[] = []
     const settings = await this.getVaultSettings()
     const hidden = hiddenPrimaryRootNames(settings.systemFolderPaths)
+    // Template notes (#1024) are placeholders nobody is searching for, so
+    // their folder is never walked, as desktop leaves them out of its ranking.
+    const templateFolder = resolveTemplateFolder(settings)
     for (const folder of SEARCHABLE_TEXT_FOLDERS) {
       const topRel = await this.folderRootRel(folder)
       const isPrimaryRoot = folder === 'inbox' && topRel === ''
       if (!isPrimaryRoot) {
+        if (isPathInTemplateFolder(topRel, templateFolder)) continue
         const stat = await this.fs.statOrNull(topRel)
         if (!stat || stat.type !== 'directory') continue
       }
-      await this.collectSearchCandidates(topRel, folder, isPrimaryRoot, hidden, candidates)
+      await this.collectSearchCandidates(topRel, folder, isPrimaryRoot, hidden, templateFolder, candidates)
     }
     const ranked: { score: number; c: SearchCandidate }[] = []
     for (const c of candidates) {
@@ -1252,15 +1273,17 @@ export class MobileVault {
     folder: NoteFolder,
     isPrimaryRoot: boolean,
     hidden: Set<string>,
+    templateFolder: string | null,
     out: SearchCandidate[]
   ): Promise<void> {
     const entries = await this.fs.readdir(dirRel)
     for (const entry of entries) {
       const childRel = dirRel ? `${dirRel}/${entry.name}` : entry.name
+      if (isPathInTemplateFolder(childRel, templateFolder)) continue
       if (entry.type === 'directory') {
         if (entry.name.startsWith('.')) continue
         if (isPrimaryRoot && hidden.has(entry.name)) continue
-        await this.collectSearchCandidates(childRel, folder, false, hidden, out)
+        await this.collectSearchCandidates(childRel, folder, false, hidden, templateFolder, out)
         continue
       }
       if (!isMarkdownPath(entry.name)) continue
@@ -1305,13 +1328,11 @@ export class MobileVault {
 
   /** The vault's Tasks folder lists from vault.json: the folders left out of
    *  Tasks (#458) and the Task folders it is narrowed to (#962), empty
-   *  meaning the whole vault. */
+   *  meaning the whole vault, with the template folder (#1024) left out too,
+   *  even inside a Task folder: a template's checkboxes are placeholders.
+   *  The same helper desktop main, MCP and the Go server apply. */
   private async tasksFolderLists(): Promise<{ excluded: string[]; included: string[] }> {
-    const tasks = (await this.getVaultSettings()).tasks
-    return {
-      excluded: normalizeTasksExcludedFolders(tasks?.excludedFolders),
-      included: normalizeTasksIncludedFolders(tasks?.includedFolders)
-    }
+    return tasksFolderListsForSettings(await this.getVaultSettings())
   }
 
   async scanTasks(): Promise<VaultTask[]> {

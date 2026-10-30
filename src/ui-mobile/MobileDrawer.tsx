@@ -11,7 +11,7 @@ import ReactDOM from 'react-dom/client'
 import { getShellSnapshot, useShellSnapshot, setNoteSortOrder, type NoteSortOrder } from '@zennotes/app-core/shell'
 import { getBrowseSnapshot, useBrowseSnapshot, getBrowseDirectory, requestCreateBrowseFolder,
   requestCreateBrowseNote, requestRenameBrowseFolder, requestRenameBrowseDatabase, requestMoveBrowseDirectory,
-  requestDeleteBrowseDirectory } from '@zennotes/app-core/browse'
+  requestDeleteBrowseDirectory, openBrowseFolderGallery } from '@zennotes/app-core/browse'
 import { useWorkspaceSnapshot, openLocalVault, pickLocalVault, refreshRemoteProfiles, connectRemoteWorkspace,
   connectRemoteProfile, changeRemoteVaultPath, deleteRemoteProfile } from '@zennotes/app-core/workspace'
 import { openNote, openAppPage } from '@zennotes/app-core/navigation'
@@ -85,6 +85,7 @@ const D = {
   notePlus: 'M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9l-6-6zM14 3v6h6M12 12v6M9 15h6',
   move: 'M5 8V6a2 2 0 012-2h3l2 2h7a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2v-4M2 13h9m0 0l-3-3m3 3l-3 3',
   rename: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z',
+  gallery: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   link: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71',
   files:
     'M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM8.5 10a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM21 15l-5-5L5 21',
@@ -1030,6 +1031,13 @@ function MobileDrawerBody(props: {
     setFolderMenu(null)
     void requestMoveBrowseDirectory(host, subpath).catch(reportActionError)
   }
+  // The desktop folder menu's Open as Gallery (core 2.80's
+  // openBrowseFolderGallery): the drawer closes onto the folder's cards.
+  const openFolderGallery = (subpath: string): void => {
+    const host = folderMenu?.host ?? captureMobileWorkspace()
+    setFolderMenu(null)
+    go(() => openBrowseFolderGallery(host, subpath).catch(reportActionError))
+  }
   const deleteFolder = (subpath: string, _name: string): void => {
     const host = folderMenu?.host ?? captureMobileWorkspace()
     void requestDeleteBrowseDirectory(host, subpath).catch(reportActionError)
@@ -1307,6 +1315,16 @@ function MobileDrawerBody(props: {
                     >
                       <Icon d={D.pin} />
                       {pinnedFolders.includes(folderMenu.subpath) ? 'Unpin' : 'Pin'}
+                    </button>
+                  )}
+                  {folderMenu.kind === 'folder' && (
+                    <button
+                      type="button"
+                      className="zn-mobile-sheet-row"
+                      onClick={() => openFolderGallery(folderMenu.subpath)}
+                    >
+                      <Icon d={D.gallery} />
+                      Open as Gallery
                     </button>
                   )}
                   <button

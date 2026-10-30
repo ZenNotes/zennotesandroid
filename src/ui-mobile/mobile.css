@@ -12,6 +12,14 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Core styles the scrollbars (size, thumb, track) but not the corner where
+   two of them meet, which Chromium then paints white. The Kanban board with
+   lanes (core 2.80) scrolls both ways, so a white square sat at the board's
+   bottom-right corner. */
+.zn-mobile ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .zn-mobile body {
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
@@ -1717,6 +1725,24 @@
   margin-left: auto;
 }
 
+/* The Tasks views' Keys button (core 2.80), which replaced the hint strips
+   above with a sheet of keys and "right-click for actions": the same
+   keyboard help, behind a button. Tablets keep it. */
+.zn-mobile.zn-phone [data-tasks-keys] {
+  display: none;
+}
+
+/* Where the Keys sheet does show at a narrow width, its two columns of key
+   chips in a 92vw popover squeezed the chips: one column, chips at their
+   own width. The Android shell's rules. */
+.zn-mobile [data-tasks-keys-popover] > .grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.zn-mobile [data-tasks-keys-popover] kbd {
+  flex-shrink: 0;
+}
+
 /* Command-palette shortcut chips ("⌘2", "Space m") — hardware-keyboard
    hints, meaningless on a soft keyboard (2.13 changed the chip markup,
    so the rule above no longer catches them). */
@@ -1927,6 +1953,12 @@
   border-radius: 0.5rem;
   color: rgb(var(--z-accent));
   background: rgb(var(--z-bg-2) / 0.9);
+}
+
+/* A card's subtask bar (core 2.80) spans the card, its "1/3 · 33%" at the
+   right end, just above the move handle: keep the label clear of it. */
+.zn-mobile.zn-phone [data-kanban-task-id] [data-kanban-progress] {
+  padding-right: 34px;
 }
 
 .zn-phone .zn-kanban-move:active {

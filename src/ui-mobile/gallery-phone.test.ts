@@ -21,3 +21,15 @@ describe('the folder Gallery on the phone layout', () => {
     assert.match(css, /\.zn-mobile\.zn-phone header\.glass-header\.flex-wrap \{\s*height: auto;/)
   })
 })
+
+describe('the folder sheet', () => {
+  it('opens a folder as a Gallery, the desktop folder menu\'s Open as Gallery (core 2.80)', () => {
+    const browse = readFileSync(new URL('../../node_modules/@zennotes/app-core/dist/browse.d.ts', import.meta.url), 'utf8')
+    assert.match(browse, /\bopenBrowseFolderGallery\b/)
+    const drawer = readFileSync(new URL('./MobileDrawer.tsx', import.meta.url), 'utf8')
+    const sheet = drawer.slice(drawer.indexOf("aria-label={folderMenu.kind === 'database'"), drawer.indexOf('zn-mobile-drawer-footer'))
+    // A folder row, not a database's: a database lists its pages in its own grid.
+    assert.match(sheet, /folderMenu\.kind === 'folder' && \(\s*<button[^]*?openFolderGallery\(folderMenu\.subpath\)[^]*?Open as Gallery/)
+    assert.match(drawer, /go\(\(\) => openBrowseFolderGallery\(host, subpath\)/)
+  })
+})

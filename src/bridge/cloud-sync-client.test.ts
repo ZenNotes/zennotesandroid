@@ -350,3 +350,47 @@ it('puts an object again when the store never answered, never when it refused', 
     }
   }
 })
+
+it('keeps which fields a 422 refused, so sync sets one path aside and sends the rest (#1004)', async () => {
+  const refused = 'This path is not eligible for vault sync.'
+  const requests: string[] = []
+  const { createCloudSyncClient, cloudSyncPathRefusal, CloudSyncPathRefusedError } = await loadMobileModule([
+    './src/bridge/cloud-sync-client.ts', '@zennotes/shared-domain/cloud-sync-refusal'
+  ], {
+    '@capacitor/core': {
+      registerPlugin: () => ({}),
+      CapacitorHttp: { request: async ({ url, method }: { url: string; method: string }) => {
+        requests.push(`${method} ${new URL(url).pathname}`)
+        if (url.endsWith('/uploads')) {
+          return { status: 422, data: { error: { code: 'VALIDATION_FAILED', message: 'The request data is invalid.' }, errors: { path: [refused] } } }
+        }
+        if (requests.length === 1) {
+          return { status: 422, data: { error: { code: 'VALIDATION_FAILED', message: 'The request data is invalid.' }, errors: { 'mutations.1.path': [refused] } } }
+        }
+        return { status: 200, data: { acknowledged: [{ operation_id: 'kept', item_id: 'kept-item', revision: 1, sequence: 3 }], conflicts: [], cursor: 3 } }
+      } }
+    }
+  })
+  const content = (bytes: number) => ({ encoding: 'base64', data: Buffer.alloc(bytes, 1).toString('base64'), sha256: 'a'.repeat(64), byte_length: bytes, media_type: 'text/markdown' })
+  const upsert = (operation: string, path: string, bytes = 4) =>
+    ({ type: 'upsert', operation_id: operation, item_id: `${operation}-item`, base_revision: null, path, kind: 'markdown', content: content(bytes) })
+  const client = createCloudSyncClient('https://example.test', 'test-only', { accountId: 'refused-path' })
+
+  // One request: the transport keeps Cloud's `errors`, so the refusal names the path.
+  const inline = { mutations: [upsert('kept', 'inbox/Note.md'), upsert('agent', '.zennotes/agent-edits/inbox/Note.md.json')] }
+  const error = await client.mutate('vault-1', inline).catch((caught: unknown) => caught)
+  assert.equal(error.status, 422)
+  assert.equal(error.code, 'VALIDATION_FAILED')
+  assert.equal(error.message, refused)
+  assert.deepEqual(error.details, { errors: { 'mutations.1.path': [refused] } })
+  assert.deepEqual(cloudSyncPathRefusal(error, inline)?.indices, [1])
+
+  // Several requests: a large file's upload refused for its path is named by
+  // its place in the batch, and carries what the inline request applied.
+  const mixed = { mutations: [upsert('kept', 'inbox/Note.md'), upsert('big', '.zennotes/agent-edits/big.json', 5 * 1024 * 1024 + 1)] }
+  const split = await client.mutate('vault-1', mixed).catch((caught: unknown) => caught)
+  assert.ok(split instanceof CloudSyncPathRefusedError)
+  assert.deepEqual(split.refusal.indices, [1])
+  assert.deepEqual(split.refusal.applied.acknowledged.map((entry: { operation_id: string }) => entry.operation_id), ['kept'])
+  assert.deepEqual(cloudSyncPathRefusal(split, mixed)?.indices, [1])
+})

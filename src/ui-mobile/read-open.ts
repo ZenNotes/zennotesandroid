@@ -13,13 +13,13 @@
  * navigation (wikilink taps, Back, sheets).
  *
  * So on the phone layout, a note opened from a zennotes:// link or from one
- * of core's note lists (Home, Tasks, Quick Notes, Tags, Archive, Trash)
- * arms a short hold (keyboard-hold.ts) that refuses the editor focus core
- * follows the open with. Tapping into the text releases it and raises the
- * keyboard as always, and any other touch releases it too, so whatever a
- * tap elsewhere starts (a new note, the ensō dial, the Calendar's "Add a
- * task") focuses as before. Desktop-layout tablets keep core's behavior.
- * Same file in both phone shells.
+ * of core's note lists (Home, Tasks, Quick Notes, Tags, Archive, Trash, the
+ * Kanban board's cards) arms a short hold (keyboard-hold.ts) that refuses
+ * the editor focus core follows the open with. Tapping into the text
+ * releases it and raises the keyboard as always, and any other touch
+ * releases it too, so whatever a tap elsewhere starts (a new note, the
+ * ensō dial, the Calendar's "Add a task") focuses as before. Desktop-layout
+ * tablets keep core's behavior. Same file in both phone shells.
  */
 import { Keyboard } from '@capacitor/keyboard'
 import { isPhoneViewport } from '../viewport'
@@ -48,14 +48,21 @@ const KEEP_DOWN_MENU_LABELS = ['Remove callout']
  *  a desktop (DatabaseColumnsMenu, core 2.79). On a phone that focus is the
  *  keyboard over the menu; a tap into the field still raises it. */
 const NO_AUTOFOCUS_FIELDS = 'input[aria-label="Find a column"]'
+/** A Kanban card: a tap on the card, its title, its open arrow or one of its
+ *  subtask lines (core 2.80) opens the note. Its checkboxes, its subtask bar
+ *  and the move handle never focus the editor, so the hold they arm lapses
+ *  unused. */
+const READ_CARDS = '[data-kanban-task-id]'
 
 function isEditor(el: Element): boolean {
   return el.closest('.cm-editor') !== null
 }
 
-/** A tap on a row that opens its note (not on one of the row's own controls). */
+/** A tap on a row that opens its note (not on one of the row's own
+ *  controls), or anywhere on a Kanban card. */
 function opensToRead(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
+  if (target.closest(READ_CARDS)) return true
   const row = target.closest(READ_ROWS)
   if (!row) return false
   const control = target.closest(ROW_CONTROLS)

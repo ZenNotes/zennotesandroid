@@ -1007,6 +1007,20 @@ function MobileDrawerBody(props: {
     }
   }, [refreshing])
 
+  // System back closes the folder sheet or the sort menu before the drawer
+  // under it (MobileShell's useSystemBackClose). Neither has an Escape of its
+  // own, so the cascade's menu step left them open.
+  useEffect(() => {
+    const onBack = (e: Event): void => {
+      if (folderMenu) setFolderMenu(null)
+      else if (sortOpen) setSortOpen(false)
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener('zn:android-back', onBack)
+    return () => window.removeEventListener('zn:android-back', onBack)
+  }, [folderMenu, sortOpen])
+
   const renameFolderFromDrawer = (subpath: string, _name: string): void => {
     const host = folderMenu?.host ?? captureMobileWorkspace()
     const rename = folderMenu?.kind === 'database' ? requestRenameBrowseDatabase : requestRenameBrowseFolder

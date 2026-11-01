@@ -23,6 +23,7 @@ import { getSettingsSnapshot, useSettingsSnapshot, subscribeSettings, setSetting
 import { DateCalendar } from '@zennotes/app-core/calendar'
 import { CLOSE_CALENDAR_SHEET_EVENT, SHOW_CALENDAR_EVENT, requestCalendar, type CalendarRequest } from './calendar-request'
 import { weekStep } from './calendar-week'
+import { sendEscape } from './back-escape'
 import { useEditorPresentation, setEditorMode, hasEditorSelection, runEditorCommand } from '@zennotes/app-core/editor'
 import { getTasksSnapshot, moveTaskToColumn, type KanbanGroupBy } from '@zennotes/app-core/tasks'
 import { runAppCommand, showCommandPalette, showSearch, showTemplates, showOutline } from '@zennotes/app-core/commands'
@@ -2117,24 +2118,28 @@ function useHeaderBackButton(): void {
  *
  * The cascade mirrors what a tap on each layer's own affordance would do,
  * top-most first. Components whose open state is private (the FAB dial, the
- * kanban move sheet) participate through the cancelable `zn:android-back`
- * event rather than lifting their state here.
+ * kanban move sheet, the note sheet, the drawer's folder sheet and sort menu)
+ * participate through the cancelable `zn:android-back` event rather than
+ * lifting their state here.
  */
 function useSystemBackClose(): void {
   useEffect(() => {
-    const escape = (): void => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    }
+    // From inside the layer, bubbling out to the window (back-escape.ts).
+    const escape = sendEscape
     const handle = (): void => {
-      // 1. Self-managed sheets (FAB dial, create/action sheets, kanban move).
+      // 1. Self-managed sheets (FAB dial, create/action sheets, kanban move,
+      //    note sheet, the drawer's folder sheet and sort menu).
       const consumed = !window.dispatchEvent(
         new CustomEvent('zn:android-back', { cancelable: true })
       )
       if (consumed) return
       // 2. Layers stacked above modals: nested editors, palettes, menus.
-      //    Their close handlers all listen for Escape at the window.
-      if (document.querySelector('.z-nested, .z-palette, div[role="menu"]')) {
-        escape()
+      //    Nested editors and palettes listen for Escape at the window; core's
+      //    context menu listens on itself, so the Escape starts inside the
+      //    top-most menu.
+      const menus = document.querySelectorAll<HTMLElement>('div[role="menu"]')
+      if (menus.length > 0 || document.querySelector('.z-nested, .z-palette')) {
+        escape(menus[menus.length - 1])
         return
       }
       // 3. The vaults sheet (can be summoned from inside Settings).
@@ -2153,9 +2158,12 @@ function useSystemBackClose(): void {
         else setSettingsVisible(false)
         return
       }
-      // 5. Any remaining modal (prompts, confirms, dialogs).
-      if (document.querySelector('.z-modal')) {
-        escape()
+      // 5. Any remaining modal (prompts, confirms, dialogs). A dialog closes
+      //    on an Escape at the window, a prompt on one in its field, so the
+      //    Escape starts inside the top-most modal.
+      const modals = document.querySelectorAll<HTMLElement>('.z-modal')
+      if (modals.length > 0) {
+        escape(modals[modals.length - 1])
         return
       }
       // 6. Full-screen right panels (calendar/outline/connections/comments,

@@ -20,7 +20,7 @@
  * drawer and the sheet), and the lists refresh in place via the vault
  * change events every mutating bridge call emits.
  */
-import React, { useSyncExternalStore } from 'react'
+import React, { useEffect, useSyncExternalStore } from 'react'
 import { Keyboard } from '@capacitor/keyboard'
 import { getShellSnapshot, useShellSnapshot } from '@zennotes/app-core/shell'
 import { requestRenameNote, requestMoveNote, requestArchiveNote, requestTrashNote,
@@ -213,6 +213,17 @@ export function NoteActionSheet(): React.JSX.Element | null {
   const target = useNoteMenu()
   const pins = usePins(vaultKey())
   const favorites = useShellSnapshot().favorites
+  // System back closes the sheet (MobileShell's useSystemBackClose). It has
+  // no Escape of its own, so the cascade's menu step left it open.
+  useEffect(() => {
+    if (!target) return
+    const onBack = (e: Event): void => {
+      closeNoteMenu()
+      e.preventDefault()
+    }
+    window.addEventListener('zn:android-back', onBack)
+    return () => window.removeEventListener('zn:android-back', onBack)
+  }, [target])
   if (!target) return null
   const rows = rowsFor(target, pins.notes.includes(target.path), favorites.includes(target.path))
   return (

@@ -973,8 +973,16 @@ function useLongPressContextMenu(): void {
     // EditorPane's file-drop error alert. Drag is not a phone gesture — the
     // context menu owns long-press there — so kill it at dragstart; tablets
     // (≥768px, desktop-like layout) keep native drag behavior.
+    //
+    // preventDefault alone stops the native drag but still lets the event
+    // reach app-core's own dragstart handlers, which then wait for a dragend
+    // that a cancelled drag never fires. A database Board card (core 2.81's
+    // long-press card menu) stayed dimmed as "being dragged" for good. The
+    // drag is not happening, so app-core does not hear of it either.
     const suppressDrag = (e: DragEvent): void => {
-      if (isPhoneWidth()) e.preventDefault()
+      if (!isPhoneWidth()) return
+      e.preventDefault()
+      e.stopPropagation()
     }
 
     document.addEventListener('contextmenu', onContextMenu, true)

@@ -37,6 +37,7 @@ import { goHome } from './nav'
 import { installNoteRowGestures, NOTE_ROW_SELECTOR } from './note-row-gestures'
 import { NoteActionSheet } from './note-actions'
 import { installEditorKeyboardScroll } from './editor-keyboard-scroll'
+import { installFieldKeyboardReveal } from './field-keyboard-reveal'
 import { installEditorNativeTyping } from './editor-native-typing'
 import { installWikilinkTouchNavigation } from './wikilink-touch'
 import { SheetHandle } from './SheetHandle'
@@ -3269,6 +3270,11 @@ function useEditorKeyboardScroll(): void {
   useEffect(() => installEditorKeyboardScroll(), [])
 }
 
+/** A field outside the note shows above the keyboard (field-keyboard-reveal.ts). */
+function useFieldKeyboardReveal(): void {
+  useEffect(() => (isPhoneWidth() ? installFieldKeyboardReveal() : undefined), [])
+}
+
 /** The keyboard's autocorrect / suggestions in the note body (editor-native-typing.ts). */
 function useEditorNativeTyping(): void {
   useEffect(() => installEditorNativeTyping(), [])
@@ -3284,6 +3290,7 @@ function MobileShellRoot(): React.JSX.Element {
   useLongPressContextMenu()
   useNoteRowGestures()
   useEditorKeyboardScroll()
+  useFieldKeyboardReveal()
   useEditorNativeTyping()
   usePlaceholderCleanup()
   useTagsEmptyStateHint()

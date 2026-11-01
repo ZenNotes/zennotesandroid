@@ -30,6 +30,7 @@ import { installHomeGuard } from './ui-mobile/nav'
 import { refreshVault } from './ui-mobile/refresh'
 import { isPhoneViewport, watchPhoneClass } from './viewport'
 import { waitAtBoot } from './boot-wait'
+import { KeyboardLift } from './ui-mobile/keyboard-lift'
 import './ui-mobile/mobile.css'
 
 function wireKeyboard(): void {
@@ -58,13 +59,22 @@ function wireKeyboard(): void {
   // innerWidth-at-boot check did.
   watchPhoneClass(applyResizeMode)
   applyResizeMode(isPhoneViewport())
+  // The tablet lift: only the part of the keyboard the viewport has not
+  // already given up, since the Android plugin cannot actually turn the
+  // resize off (keyboard-lift.ts). Phones never read it.
+  const lift = new KeyboardLift(window.innerWidth, window.innerHeight)
+  const setLift = (px: number): void => html.style.setProperty('--zn-kb-height', `${px}px`)
+  window.addEventListener('resize', () => setLift(lift.resized(window.innerWidth, window.innerHeight)))
   void Keyboard.addListener('keyboardWillShow', (info) => {
     html.classList.add('zn-kb-open')
-    html.style.setProperty('--zn-kb-height', `${info.keyboardHeight}px`)
+    setLift(lift.shown(info.keyboardHeight, window.innerHeight))
+  }).catch(() => {})
+  void Keyboard.addListener('keyboardDidShow', (info) => {
+    setLift(lift.shown(info.keyboardHeight, window.innerHeight))
   }).catch(() => {})
   void Keyboard.addListener('keyboardWillHide', () => {
     html.classList.remove('zn-kb-open')
-    html.style.setProperty('--zn-kb-height', '0px')
+    setLift(lift.hidden())
   }).catch(() => {})
 }
 

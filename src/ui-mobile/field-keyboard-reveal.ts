@@ -4,9 +4,9 @@ import { Keyboard } from '@capacitor/keyboard'
  * A field outside the note that the soft keyboard lands on is brought above
  * it once the keyboard is up.
  *
- * Phones resize the WebView for the keyboard (KeyboardResize.Native), and
- * Chromium then scrolls the focused field into view, but only one the
- * keyboard covers completely. A field it covers in part stays where it was,
+ * The WebView shrinks for the keyboard (keyboard-lift.ts), and Chromium then
+ * scrolls the focused field into view, but on a phone only one the keyboard
+ * covers completely. A field it covers in part stays where it was,
  * typing included: Settings → Tasks opens with the folder board's "Group by
  * the folders inside" field just above where the keyboard's top lands, so a
  * tap on it left the field's lower half under the keyboard's suggestion
@@ -79,7 +79,8 @@ export function revealFocusedField(): void {
   }
 }
 
-/** Phones only (the WebView resizes for the keyboard there). */
+/** Installed on phones. A tablet's Settings dialog brought a field it covered
+ *  in part above the keyboard on its own when walked (API 37). */
 export function installFieldKeyboardReveal(): () => void {
   let frame = 0
   const soon = (): void => {

@@ -358,10 +358,10 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
 
 /**
  * The ⊕ create sheet: desktop's create menu (New note / template / database
- * / folder) minus drawing (view-only on phones), with quick capture as the
- * hero first row and New task beside New note (#101). Daily note rides along
- * when enabled: the home screen's quick-action chips are hidden on phones, so
- * this is its one-tap home.
+ * / Kanban / folder) minus drawing (view-only on phones), with quick capture
+ * as the hero first row and New task beside New note (#101). Daily note
+ * rides along when enabled: the home screen's quick-action chips are hidden
+ * on phones, so this is its one-tap home.
  */
 function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
   const dailyEnabled = useSettingsSnapshot().dailyNotesEnabled
@@ -431,6 +431,14 @@ function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
             >
               <Icon d={ICONS.database} />
               New database
+            </button>
+            <button
+              type="button"
+              className="zn-mobile-sheet-row"
+              onClick={() => run(() => runCommand('database.new.kanban'))}
+            >
+              <Icon d={ICONS.tabs} />
+              New Kanban
             </button>
             <button
               type="button"

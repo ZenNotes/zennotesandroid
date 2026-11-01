@@ -2142,6 +2142,19 @@ function kanbanColumnLabel(groupBy: string, id: string): string {
   return id
 }
 
+/** A column's title as its header shows it. Core's label covers what the id
+ *  map above does not: the No due date and In progress columns (whose ids
+ *  read "undated" and "in-progress") and any column the user renamed. The
+ *  map is the fallback for a header that shows no title, mid-rename. */
+function kanbanColumnHeaderTitle(id: string): string | null {
+  for (const col of document.querySelectorAll<HTMLElement>('[data-kanban-column-id]')) {
+    if (col.getAttribute('data-kanban-column-id') !== id) continue
+    const title = col.querySelector('[data-kanban-column-header] .truncate')?.textContent?.trim()
+    if (title) return title
+  }
+  return null
+}
+
 /** Inject a move handle into every Kanban card; on tap it dispatches the task
  *  id + current column so the shell's move sheet can offer the other columns.
  *  Skipped on folder boards (moving isn't defined there). */
@@ -2417,12 +2430,14 @@ function KanbanMoveSheet(): React.JSX.Element | null {
       if (!taskId) return
       const groupBy = getTasksSnapshot().groupBy
       if (groupBy === 'folder') return
+      // With lanes on, each column is a header plus one cell per lane, all
+      // carrying its id: offer each column once.
       const cols = [...document.querySelectorAll<HTMLElement>('[data-kanban-column-id]')]
         .map((el) => el.getAttribute('data-kanban-column-id'))
         .filter((id): id is string => !!id)
-      const targets = cols
+      const targets = [...new Set(cols)]
         .filter((id) => id !== detail?.currentCol)
-        .map((id) => ({ id, label: kanbanColumnLabel(groupBy, id) }))
+        .map((id) => ({ id, label: kanbanColumnHeaderTitle(id) ?? kanbanColumnLabel(groupBy, id) }))
       if (targets.length === 0) return
       setState({ taskId, groupBy, targets, host: captureMobileWorkspace() })
     }

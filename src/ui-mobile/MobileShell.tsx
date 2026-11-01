@@ -22,6 +22,7 @@ import { getSettingsSnapshot, useSettingsSnapshot, subscribeSettings, setSetting
   showSettingsPage } from '@zennotes/app-core/settings'
 import { DateCalendar } from '@zennotes/app-core/calendar'
 import { CLOSE_CALENDAR_SHEET_EVENT, SHOW_CALENDAR_EVENT, requestCalendar, type CalendarRequest } from './calendar-request'
+import { weekStep } from './calendar-week'
 import { useEditorPresentation, setEditorMode, hasEditorSelection, runEditorCommand } from '@zennotes/app-core/editor'
 import { getTasksSnapshot, moveTaskToColumn, type KanbanGroupBy } from '@zennotes/app-core/tasks'
 import { runAppCommand, showCommandPalette, showSearch, showTemplates, showOutline } from '@zennotes/app-core/commands'
@@ -1589,24 +1590,58 @@ function useDesktopCommandCleanup(): void {
  * 42-cell list, so a week is a contiguous 7-cell run. A Week|Month segmented
  * control is injected next to the calendar's own Today button (a single
  * action-labeled pill read as a status chip, not a button — Adib's feedback).
+ *
+ * The arrows beside it are core's month arrows. In Week mode they move a
+ * week (calendar-week.ts): a tap went a whole month on, from the week of
+ * Oct 26 to the week of Nov 30, while the grid showed one week.
  */
 const CAL_SCOPE_KEY = 'zn-mobile:cal-scope'
+const CAL_PREV_ARROW = "[data-tasks-toolbar] button[title^='Previous month']"
+const CAL_NEXT_ARROW = "[data-tasks-toolbar] button[title^='Next month']"
+
+/** The Tasks calendar's day cells. The date calendar (a note's panel, or the
+ *  Calendar sheet over Tasks) marks its days the same way; its grid keeps the
+ *  whole month. */
+function tasksCalendarCells(): HTMLButtonElement[] {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-cal-day]')).filter(
+    (cell) => !cell.closest('[data-calendar-panel]')
+  )
+}
+
+/** The day whose week Week mode shows: the selected cell (accent ring) if
+ *  present, else today, else the second row (the first is often entirely the
+ *  previous month). */
+function calendarWeekAnchor(cells: HTMLButtonElement[]): HTMLButtonElement | undefined {
+  const now = new Date()
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return (
+    cells.find((c) => c.className.includes('ring-2')) ??
+    cells.find((c) => c.dataset.calDay === todayIso) ??
+    cells[7]
+  )
+}
 
 function useCalendarWeekMode(): void {
   useEffect(() => {
     if (!isPhoneWidth()) return
     let control: HTMLDivElement | null = null
     let raf = 0
+    // A week arrow whose day lies past the grid waits here while core's month
+    // arrow brings that month in; `passMonthArrow` lets that one click through.
+    let pendingDay: string | null = null
+    let passMonthArrow = false
 
     const scope = (): 'week' | 'month' =>
       localStorage.getItem(CAL_SCOPE_KEY) === 'month' ? 'month' : 'week'
 
+    const pickPendingDay = (cells: HTMLButtonElement[]): void => {
+      const iso = pendingDay
+      pendingDay = null
+      cells.find((cell) => cell.dataset.calDay === iso)?.click()
+    }
+
     const apply = (): void => {
-      // The date calendar (a note's panel, or the Calendar sheet over Tasks)
-      // marks its days the same way; its grid keeps the whole month.
-      const cells = Array.from(
-        document.querySelectorAll<HTMLButtonElement>('button[data-cal-day]')
-      ).filter((cell) => !cell.closest('[data-calendar-panel]'))
+      const cells = tasksCalendarCells()
       const todayBtn = document.querySelector<HTMLElement>("button[title='Today (gt)']")
       if (cells.length === 0 || !todayBtn) {
         control?.remove()
@@ -1638,19 +1673,28 @@ function useCalendarWeekMode(): void {
         btn.classList.toggle('is-active', active)
         btn.setAttribute('aria-pressed', String(active))
       }
+      // Core titles its arrows by the month; a screen reader hears the week.
+      for (const [selector, label] of [
+        [CAL_PREV_ARROW, 'Previous week'],
+        [CAL_NEXT_ARROW, 'Next week']
+      ] as const) {
+        const arrow = document.querySelector<HTMLElement>(selector)
+        if (week) arrow?.setAttribute('aria-label', label)
+        else arrow?.removeAttribute('aria-label')
+      }
       document.documentElement.classList.toggle('zn-cal-week', week)
       if (!week) {
+        pendingDay = null
         for (const cell of cells) cell.style.display = ''
         return
       }
-      // Anchor: the selected cell (accent ring) if present, else today, else
-      // the second row (first row is often entirely the previous month).
-      const now = new Date()
-      const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-      const anchor =
-        cells.find((c) => c.className.includes('ring-2')) ??
-        cells.find((c) => c.dataset.calDay === todayIso) ??
-        cells[7]
+      if (pendingDay) {
+        // The month a week arrow asked for is in: pick the day, which
+        // reapplies on its click.
+        pickPendingDay(cells)
+        return
+      }
+      const anchor = calendarWeekAnchor(cells)
       const idx = Math.max(0, cells.indexOf(anchor ?? cells[0]))
       const start = Math.floor(idx / 7) * 7
       cells.forEach((cell, i) => {
@@ -1669,10 +1713,43 @@ function useCalendarWeekMode(): void {
     const onClick = (e: MouseEvent): void => {
       if ((e.target as HTMLElement | null)?.closest?.('[data-cal-day], .zn-cal-scope')) schedule()
     }
+    // Week mode's arrows: core never hears the tap, the day a week away is
+    // picked instead (selection and month follow it, as for a tapped day).
+    const onArrow = (e: MouseEvent): void => {
+      if (passMonthArrow || scope() !== 'week') return
+      const target = e.target as Element | null
+      const arrow = target?.closest?.<HTMLButtonElement>(`${CAL_PREV_ARROW}, ${CAL_NEXT_ARROW}`)
+      const cells = tasksCalendarCells()
+      const from = calendarWeekAnchor(cells)?.dataset.calDay
+      if (!arrow || !from) return
+      e.preventDefault()
+      e.stopPropagation()
+      const direction = arrow.matches(CAL_PREV_ARROW) ? -1 : 1
+      const step = weekStep(
+        cells.map((cell) => cell.dataset.calDay ?? ''),
+        from,
+        direction
+      )
+      pendingDay = step.iso
+      if (step.kind === 'month') {
+        passMonthArrow = true
+        try {
+          arrow.click()
+        } finally {
+          passMonthArrow = false
+        }
+        // React may not have drawn the new month yet; the observer's next
+        // pass picks the day then.
+        if (!tasksCalendarCells().some((cell) => cell.dataset.calDay === step.iso)) return
+      }
+      pickPendingDay(tasksCalendarCells())
+    }
+    document.addEventListener('click', onArrow, true)
     document.addEventListener('click', onClick, true)
     schedule()
     return () => {
       observer.disconnect()
+      document.removeEventListener('click', onArrow, true)
       document.removeEventListener('click', onClick, true)
       cancelAnimationFrame(raf)
       control?.remove()

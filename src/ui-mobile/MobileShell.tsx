@@ -22,6 +22,8 @@ import { getSettingsSnapshot, useSettingsSnapshot, subscribeSettings, setSetting
   showSettingsPage } from '@zennotes/app-core/settings'
 import { DateCalendar } from '@zennotes/app-core/calendar'
 import { CLOSE_CALENDAR_SHEET_EVENT, SHOW_CALENDAR_EVENT, requestCalendar, type CalendarRequest } from './calendar-request'
+import { weekStep } from './calendar-week'
+import { sendEscape } from './back-escape'
 import { useEditorPresentation, setEditorMode, hasEditorSelection, runEditorCommand } from '@zennotes/app-core/editor'
 import { getTasksSnapshot, moveTaskToColumn, type KanbanGroupBy } from '@zennotes/app-core/tasks'
 import { runAppCommand, showCommandPalette, showSearch, showTemplates, showOutline } from '@zennotes/app-core/commands'
@@ -36,6 +38,7 @@ import { goHome } from './nav'
 import { installNoteRowGestures, NOTE_ROW_SELECTOR } from './note-row-gestures'
 import { NoteActionSheet } from './note-actions'
 import { installEditorKeyboardScroll } from './editor-keyboard-scroll'
+import { installFieldKeyboardReveal } from './field-keyboard-reveal'
 import { installEditorNativeTyping } from './editor-native-typing'
 import { installWikilinkTouchNavigation } from './wikilink-touch'
 import { SheetHandle } from './SheetHandle'
@@ -358,10 +361,10 @@ function ActionSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
 
 /**
  * The ⊕ create sheet: desktop's create menu (New note / template / database
- * / folder) minus drawing (view-only on phones), with quick capture as the
- * hero first row and New task beside New note (#101). Daily note rides along
- * when enabled: the home screen's quick-action chips are hidden on phones, so
- * this is its one-tap home.
+ * / Kanban / folder) minus drawing (view-only on phones), with quick capture
+ * as the hero first row and New task beside New note (#101). Daily note
+ * rides along when enabled: the home screen's quick-action chips are hidden
+ * on phones, so this is its one-tap home.
  */
 function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
   const dailyEnabled = useSettingsSnapshot().dailyNotesEnabled
@@ -431,6 +434,14 @@ function CreateSheet({ onClose }: { onClose: () => void }): React.JSX.Element {
             >
               <Icon d={ICONS.database} />
               New database
+            </button>
+            <button
+              type="button"
+              className="zn-mobile-sheet-row"
+              onClick={() => run(() => runCommand('database.new.kanban'))}
+            >
+              <Icon d={ICONS.tabs} />
+              New Kanban
             </button>
             <button
               type="button"
@@ -965,8 +976,16 @@ function useLongPressContextMenu(): void {
     // EditorPane's file-drop error alert. Drag is not a phone gesture — the
     // context menu owns long-press there — so kill it at dragstart; tablets
     // (≥768px, desktop-like layout) keep native drag behavior.
+    //
+    // preventDefault alone stops the native drag but still lets the event
+    // reach app-core's own dragstart handlers, which then wait for a dragend
+    // that a cancelled drag never fires. A database Board card (core 2.81's
+    // long-press card menu) stayed dimmed as "being dragged" for good. The
+    // drag is not happening, so app-core does not hear of it either.
     const suppressDrag = (e: DragEvent): void => {
-      if (isPhoneWidth()) e.preventDefault()
+      if (!isPhoneWidth()) return
+      e.preventDefault()
+      e.stopPropagation()
     }
 
     document.addEventListener('contextmenu', onContextMenu, true)
@@ -1573,24 +1592,58 @@ function useDesktopCommandCleanup(): void {
  * 42-cell list, so a week is a contiguous 7-cell run. A Week|Month segmented
  * control is injected next to the calendar's own Today button (a single
  * action-labeled pill read as a status chip, not a button — Adib's feedback).
+ *
+ * The arrows beside it are core's month arrows. In Week mode they move a
+ * week (calendar-week.ts): a tap went a whole month on, from the week of
+ * Oct 26 to the week of Nov 30, while the grid showed one week.
  */
 const CAL_SCOPE_KEY = 'zn-mobile:cal-scope'
+const CAL_PREV_ARROW = "[data-tasks-toolbar] button[title^='Previous month']"
+const CAL_NEXT_ARROW = "[data-tasks-toolbar] button[title^='Next month']"
+
+/** The Tasks calendar's day cells. The date calendar (a note's panel, or the
+ *  Calendar sheet over Tasks) marks its days the same way; its grid keeps the
+ *  whole month. */
+function tasksCalendarCells(): HTMLButtonElement[] {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-cal-day]')).filter(
+    (cell) => !cell.closest('[data-calendar-panel]')
+  )
+}
+
+/** The day whose week Week mode shows: the selected cell (accent ring) if
+ *  present, else today, else the second row (the first is often entirely the
+ *  previous month). */
+function calendarWeekAnchor(cells: HTMLButtonElement[]): HTMLButtonElement | undefined {
+  const now = new Date()
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return (
+    cells.find((c) => c.className.includes('ring-2')) ??
+    cells.find((c) => c.dataset.calDay === todayIso) ??
+    cells[7]
+  )
+}
 
 function useCalendarWeekMode(): void {
   useEffect(() => {
     if (!isPhoneWidth()) return
     let control: HTMLDivElement | null = null
     let raf = 0
+    // A week arrow whose day lies past the grid waits here while core's month
+    // arrow brings that month in; `passMonthArrow` lets that one click through.
+    let pendingDay: string | null = null
+    let passMonthArrow = false
 
     const scope = (): 'week' | 'month' =>
       localStorage.getItem(CAL_SCOPE_KEY) === 'month' ? 'month' : 'week'
 
+    const pickPendingDay = (cells: HTMLButtonElement[]): void => {
+      const iso = pendingDay
+      pendingDay = null
+      cells.find((cell) => cell.dataset.calDay === iso)?.click()
+    }
+
     const apply = (): void => {
-      // The date calendar (a note's panel, or the Calendar sheet over Tasks)
-      // marks its days the same way; its grid keeps the whole month.
-      const cells = Array.from(
-        document.querySelectorAll<HTMLButtonElement>('button[data-cal-day]')
-      ).filter((cell) => !cell.closest('[data-calendar-panel]'))
+      const cells = tasksCalendarCells()
       const todayBtn = document.querySelector<HTMLElement>("button[title='Today (gt)']")
       if (cells.length === 0 || !todayBtn) {
         control?.remove()
@@ -1622,19 +1675,28 @@ function useCalendarWeekMode(): void {
         btn.classList.toggle('is-active', active)
         btn.setAttribute('aria-pressed', String(active))
       }
+      // Core titles its arrows by the month; a screen reader hears the week.
+      for (const [selector, label] of [
+        [CAL_PREV_ARROW, 'Previous week'],
+        [CAL_NEXT_ARROW, 'Next week']
+      ] as const) {
+        const arrow = document.querySelector<HTMLElement>(selector)
+        if (week) arrow?.setAttribute('aria-label', label)
+        else arrow?.removeAttribute('aria-label')
+      }
       document.documentElement.classList.toggle('zn-cal-week', week)
       if (!week) {
+        pendingDay = null
         for (const cell of cells) cell.style.display = ''
         return
       }
-      // Anchor: the selected cell (accent ring) if present, else today, else
-      // the second row (first row is often entirely the previous month).
-      const now = new Date()
-      const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-      const anchor =
-        cells.find((c) => c.className.includes('ring-2')) ??
-        cells.find((c) => c.dataset.calDay === todayIso) ??
-        cells[7]
+      if (pendingDay) {
+        // The month a week arrow asked for is in: pick the day, which
+        // reapplies on its click.
+        pickPendingDay(cells)
+        return
+      }
+      const anchor = calendarWeekAnchor(cells)
       const idx = Math.max(0, cells.indexOf(anchor ?? cells[0]))
       const start = Math.floor(idx / 7) * 7
       cells.forEach((cell, i) => {
@@ -1653,10 +1715,43 @@ function useCalendarWeekMode(): void {
     const onClick = (e: MouseEvent): void => {
       if ((e.target as HTMLElement | null)?.closest?.('[data-cal-day], .zn-cal-scope')) schedule()
     }
+    // Week mode's arrows: core never hears the tap, the day a week away is
+    // picked instead (selection and month follow it, as for a tapped day).
+    const onArrow = (e: MouseEvent): void => {
+      if (passMonthArrow || scope() !== 'week') return
+      const target = e.target as Element | null
+      const arrow = target?.closest?.<HTMLButtonElement>(`${CAL_PREV_ARROW}, ${CAL_NEXT_ARROW}`)
+      const cells = tasksCalendarCells()
+      const from = calendarWeekAnchor(cells)?.dataset.calDay
+      if (!arrow || !from) return
+      e.preventDefault()
+      e.stopPropagation()
+      const direction = arrow.matches(CAL_PREV_ARROW) ? -1 : 1
+      const step = weekStep(
+        cells.map((cell) => cell.dataset.calDay ?? ''),
+        from,
+        direction
+      )
+      pendingDay = step.iso
+      if (step.kind === 'month') {
+        passMonthArrow = true
+        try {
+          arrow.click()
+        } finally {
+          passMonthArrow = false
+        }
+        // React may not have drawn the new month yet; the observer's next
+        // pass picks the day then.
+        if (!tasksCalendarCells().some((cell) => cell.dataset.calDay === step.iso)) return
+      }
+      pickPendingDay(tasksCalendarCells())
+    }
+    document.addEventListener('click', onArrow, true)
     document.addEventListener('click', onClick, true)
     schedule()
     return () => {
       observer.disconnect()
+      document.removeEventListener('click', onArrow, true)
       document.removeEventListener('click', onClick, true)
       cancelAnimationFrame(raf)
       control?.remove()
@@ -2023,24 +2118,28 @@ function useHeaderBackButton(): void {
  *
  * The cascade mirrors what a tap on each layer's own affordance would do,
  * top-most first. Components whose open state is private (the FAB dial, the
- * kanban move sheet) participate through the cancelable `zn:android-back`
- * event rather than lifting their state here.
+ * kanban move sheet, the note sheet, the drawer's folder sheet and sort menu)
+ * participate through the cancelable `zn:android-back` event rather than
+ * lifting their state here.
  */
 function useSystemBackClose(): void {
   useEffect(() => {
-    const escape = (): void => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    }
+    // From inside the layer, bubbling out to the window (back-escape.ts).
+    const escape = sendEscape
     const handle = (): void => {
-      // 1. Self-managed sheets (FAB dial, create/action sheets, kanban move).
+      // 1. Self-managed sheets (FAB dial, create/action sheets, kanban move,
+      //    note sheet, the drawer's folder sheet and sort menu).
       const consumed = !window.dispatchEvent(
         new CustomEvent('zn:android-back', { cancelable: true })
       )
       if (consumed) return
       // 2. Layers stacked above modals: nested editors, palettes, menus.
-      //    Their close handlers all listen for Escape at the window.
-      if (document.querySelector('.z-nested, .z-palette, div[role="menu"]')) {
-        escape()
+      //    Nested editors and palettes listen for Escape at the window; core's
+      //    context menu listens on itself, so the Escape starts inside the
+      //    top-most menu.
+      const menus = document.querySelectorAll<HTMLElement>('div[role="menu"]')
+      if (menus.length > 0 || document.querySelector('.z-nested, .z-palette')) {
+        escape(menus[menus.length - 1])
         return
       }
       // 3. The vaults sheet (can be summoned from inside Settings).
@@ -2059,9 +2158,12 @@ function useSystemBackClose(): void {
         else setSettingsVisible(false)
         return
       }
-      // 5. Any remaining modal (prompts, confirms, dialogs).
-      if (document.querySelector('.z-modal')) {
-        escape()
+      // 5. Any remaining modal (prompts, confirms, dialogs). A dialog closes
+      //    on an Escape at the window, a prompt on one in its field, so the
+      //    Escape starts inside the top-most modal.
+      const modals = document.querySelectorAll<HTMLElement>('.z-modal')
+      if (modals.length > 0) {
+        escape(modals[modals.length - 1])
         return
       }
       // 6. Full-screen right panels (calendar/outline/connections/comments,
@@ -2124,6 +2226,19 @@ function kanbanColumnLabel(groupBy: string, id: string): string {
   if (groupBy === 'priority') return priority[id] ?? id
   if (id === KANBAN_NO_VALUE_COLUMN) return `No ${groupBy.replace('field:', '')}`
   return id
+}
+
+/** A column's title as its header shows it. Core's label covers what the id
+ *  map above does not: the No due date and In progress columns (whose ids
+ *  read "undated" and "in-progress") and any column the user renamed. The
+ *  map is the fallback for a header that shows no title, mid-rename. */
+function kanbanColumnHeaderTitle(id: string): string | null {
+  for (const col of document.querySelectorAll<HTMLElement>('[data-kanban-column-id]')) {
+    if (col.getAttribute('data-kanban-column-id') !== id) continue
+    const title = col.querySelector('[data-kanban-column-header] .truncate')?.textContent?.trim()
+    if (title) return title
+  }
+  return null
 }
 
 /** Inject a move handle into every Kanban card; on tap it dispatches the task
@@ -2401,12 +2516,14 @@ function KanbanMoveSheet(): React.JSX.Element | null {
       if (!taskId) return
       const groupBy = getTasksSnapshot().groupBy
       if (groupBy === 'folder') return
+      // With lanes on, each column is a header plus one cell per lane, all
+      // carrying its id: offer each column once.
       const cols = [...document.querySelectorAll<HTMLElement>('[data-kanban-column-id]')]
         .map((el) => el.getAttribute('data-kanban-column-id'))
         .filter((id): id is string => !!id)
-      const targets = cols
+      const targets = [...new Set(cols)]
         .filter((id) => id !== detail?.currentCol)
-        .map((id) => ({ id, label: kanbanColumnLabel(groupBy, id) }))
+        .map((id) => ({ id, label: kanbanColumnHeaderTitle(id) ?? kanbanColumnLabel(groupBy, id) }))
       if (targets.length === 0) return
       setState({ taskId, groupBy, targets, host: captureMobileWorkspace() })
     }
@@ -3161,6 +3278,11 @@ function useEditorKeyboardScroll(): void {
   useEffect(() => installEditorKeyboardScroll(), [])
 }
 
+/** A field outside the note shows above the keyboard (field-keyboard-reveal.ts). */
+function useFieldKeyboardReveal(): void {
+  useEffect(() => (isPhoneWidth() ? installFieldKeyboardReveal() : undefined), [])
+}
+
 /** The keyboard's autocorrect / suggestions in the note body (editor-native-typing.ts). */
 function useEditorNativeTyping(): void {
   useEffect(() => installEditorNativeTyping(), [])
@@ -3176,6 +3298,7 @@ function MobileShellRoot(): React.JSX.Element {
   useLongPressContextMenu()
   useNoteRowGestures()
   useEditorKeyboardScroll()
+  useFieldKeyboardReveal()
   useEditorNativeTyping()
   usePlaceholderCleanup()
   useTagsEmptyStateHint()

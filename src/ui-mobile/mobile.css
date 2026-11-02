@@ -2262,6 +2262,23 @@
   flex-basis: 100%;
 }
 
+/* Core 2.81.1 wraps these tools inside the pane, so none runs off a narrow
+   one. A phone's line is just short of them: below about 407 CSS px they miss,
+   and part of the row fell to a line of its own. Tighter buttons hold all five
+   on one line down to a 375 px screen. */
+.zn-mobile.zn-phone
+  header.glass-header:has(button[title='Toggle the underlying CSV text'])
+  > .ml-auto {
+  column-gap: 0.25rem;
+}
+
+.zn-mobile.zn-phone
+  header.glass-header:has(button[title='Toggle the underlying CSV text'])
+  > .ml-auto
+  > button.px-3 {
+  padding-inline: 0.5rem;
+}
+
 /* Trash/Archive rows: Restore/Delete crowd the title on a phone — wrap the
    action buttons onto their own line under the note info. */
 .zn-mobile.zn-phone [data-trash-row],

@@ -3,38 +3,35 @@ import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import postcss from 'postcss'
 
-// Core 2.81.0 shows hover-only controls where nothing can hover. On a phone
-// the database Table's row Open then sat over the end of every long name, and
-// the always-shown select boxes lost their column to a long title.
+// Core 2.81.1 keeps the database Table clear on a touch screen, so the shell
+// no longer has to. These pin what it relies on: the row's hover Open, laid
+// over the end of the name cell, is gone where nothing can hover, and the
+// select column, its box always shown, keeps its 40 px against a long title.
 
-const css = postcss.parse(readFileSync(new URL('./mobile.css', import.meta.url), 'utf8'))
-const table = readFileSync(
-  new URL('../../node_modules/@zennotes/app-core/dist/components/DatabaseTableView.js', import.meta.url),
-  'utf8'
-)
+const coreDist = new URL('../../node_modules/@zennotes/app-core/dist/', import.meta.url)
+const table = readFileSync(new URL('components/DatabaseTableView.js', coreDist), 'utf8')
+const coreCss = postcss.parse(readFileSync(new URL('styles/index.css', coreDist), 'utf8'))
 
-function declaration(selector: string, property: string): string | undefined {
+function displayWhereNothingHovers(selector: string): string | undefined {
   let result: string | undefined
-  css.walkRules((rule) => {
-    if (!rule.selectors.includes(selector)) return
-    rule.walkDecls(property, (decl) => { result = decl.value })
+  coreCss.walkAtRules('media', (media) => {
+    if (media.params !== 'not all and (hover: hover) and (pointer: fine)') return
+    media.walkRules(selector, (rule) => {
+      rule.walkDecls('display', (decl) => { result = `${decl.value}${decl.important ? ' !important' : ''}` })
+    })
   })
   return result
 }
 
-describe('the database Table on a phone', () => {
-  it('drops the row Open that covered long names; the page glyph opens the page', () => {
-    assert.equal(
-      declaration(".zn-mobile.zn-phone tr.group\\/row td button.zn-hover-reveal[title='Open page']", 'display'),
-      'none'
-    )
-    assert.match(table, /zn-hover-reveal absolute right-1\.5/)
+describe('the database Table on a touch screen', () => {
+  it('has no row Open over long names; the page glyph opens the page', () => {
+    assert.match(table, /title: "Open page", className: "zn-hover-only absolute right-1\.5/)
+    assert.equal(displayWhereNothingHovers('.zn-hover-only'), 'none !important')
     assert.match(table, /title: hasContent \? 'Open page' : 'Open page \(empty\)'/)
   })
 
   it('keeps the select column wide enough for its box', () => {
-    assert.equal(declaration('.zn-mobile.zn-phone th.group\\/sa.w-10', 'min-width'), '2.5rem')
-    assert.equal(declaration('.zn-mobile.zn-phone tr.group\\/row > td.w-10:first-child', 'min-width'), '2.5rem')
-    assert.match(table, /group\/sa w-10/)
+    assert.match(table, /"group\/sa w-10 min-w-10 /)
+    assert.match(table, /_jsx\("td", \{ className: "w-10 min-w-10 /)
   })
 })

@@ -2240,21 +2240,6 @@
   display: none !important;
 }
 
-/* Core 2.81.0 shows hover-only controls on a screen that cannot hover. The
-   Table row's Open is one: a hover shortcut laid over the end of the name
-   cell, so on a phone it hid the end of every long name. The row's page
-   glyph, left of the name, already opens the page. */
-.zn-mobile.zn-phone tr.group\/row td button.zn-hover-reveal[title='Open page'] {
-  display: none !important;
-}
-
-/* The select column keeps its 40 px when a long title widens the Table, so
-   its box, now always shown, stays clear of the screen's edge. */
-.zn-mobile.zn-phone th.group\/sa.w-10,
-.zn-mobile.zn-phone tr.group\/row > td.w-10:first-child {
-  min-width: 2.5rem;
-}
-
 /* Comfortable touch targets for rows and the New-row affordance. */
 .zn-mobile.zn-phone [data-db-row],
 .zn-mobile.zn-phone div[class*='min-h-0'][class*='overflow-auto'] table td,

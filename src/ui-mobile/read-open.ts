@@ -53,6 +53,12 @@ const NO_AUTOFOCUS_FIELDS = 'input[aria-label="Find a column"]'
  *  and the move handle never focus the editor, so the hold they arm lapses
  *  unused. */
 const READ_CARDS = '[data-kanban-task-id]'
+/** The database Table's way into a record page: the page glyph left of a
+ *  row's name (the hover Open is hidden on phones). A record page opened from
+ *  it took the caret into its frontmatter, so its first Back only lowered the
+ *  keyboard (the Android check of 2.81.0); a board card's Open as page
+ *  already opens to read. */
+const READ_PAGE_BUTTONS = 'tr.group\\/row button[title^="Open page"]'
 
 function isEditor(el: Element): boolean {
   return el.closest('.cm-editor') !== null
@@ -63,6 +69,7 @@ function isEditor(el: Element): boolean {
 function opensToRead(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
   if (target.closest(READ_CARDS)) return true
+  if (target.closest(READ_PAGE_BUTTONS)) return true
   const row = target.closest(READ_ROWS)
   if (!row) return false
   const control = target.closest(ROW_CONTROLS)

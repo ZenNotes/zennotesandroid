@@ -40,6 +40,7 @@ import type {
   VaultTextSearchMatch
 } from '@zennotes/shared-domain/ipc'
 import { createDatabaseOps } from '@zennotes/shared-domain/database-ops'
+import { missingDatabaseAsNull } from './database-open'
 import { normalizeVaultDisplayName, resolveVaultName } from '@zennotes/shared-domain/vault-display-name'
 import type {
   CustomCodeLanguage,
@@ -737,7 +738,7 @@ const dbOps = createDatabaseOps({
 })
 
 const {
-  openDatabase,
+  openDatabase: openDatabaseOrThrow,
   writeDatabaseRows,
   writeDatabaseSchema,
   createDatabase,
@@ -745,6 +746,8 @@ const {
   renameDatabase,
   listDatabases
 } = dbOps
+// A tab whose database is gone answers null (database-open.ts).
+const openDatabase = missingDatabaseAsNull(openDatabaseOrThrow)
 
 // --------------------------------------------------------------------
 // Asset URL resolution (WebView-loadable file URLs)

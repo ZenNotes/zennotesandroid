@@ -56,7 +56,10 @@ describe('System back on a layer above the page', () => {
     const shell = readFileSync(new URL('./MobileShell.tsx', import.meta.url), 'utf8')
     const cascade = shell.slice(shell.indexOf('function useSystemBackClose('), shell.indexOf("CapApp.addListener('backButton', handle)"))
     assert.match(cascade, /const escape = sendEscape/)
-    assert.match(cascade, /const menus = document\.querySelectorAll<HTMLElement>\('div\[role="menu"\]'\)\n\s+if \(menus\.length > 0 \|\| document\.querySelector\('\.z-nested, \.z-palette'\)\) \{\n\s+escape\(menus\[menus\.length - 1\]\)/)
+    assert.match(cascade, /const popovers = document\.querySelectorAll<HTMLElement>\('div\[role="dialog"\]\.z-popover'\)/)
+    assert.match(cascade, /if \(menus\.length === 0 && popovers\.length > 0\) \{\n\s*escape\(popovers\[popovers\.length - 1\]\)/)
+    assert.match(cascade, /const menus = document\.querySelectorAll<HTMLElement>\('div\[role="menu"\]'\)\n/)
+    assert.match(cascade, /if \(menus\.length > 0 \|\| document\.querySelector\('\.z-nested, \.z-palette'\)\) \{\n\s+escape\(menus\[menus\.length - 1\]\)/)
     assert.match(cascade, /const modals = document\.querySelectorAll<HTMLElement>\('\.z-modal'\)\n\s+if \(modals\.length > 0\) \{\n\s+escape\(modals\[modals\.length - 1\]\)/)
     // Shell sheets with no Escape of their own close in step 1.
     const notes = readFileSync(new URL('./note-actions.tsx', import.meta.url), 'utf8')

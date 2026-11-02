@@ -2138,6 +2138,14 @@ function useSystemBackClose(): void {
       //    context menu listens on itself, so the Escape starts inside the
       //    top-most menu.
       const menus = document.querySelectorAll<HTMLElement>('div[role="menu"]')
+      // A popover over the page (a database's Filter and Columns) closes on an
+      // Escape that passes through the document. A menu opened above one goes
+      // first, and sent to the window this Escape would never reach it.
+      const popovers = document.querySelectorAll<HTMLElement>('div[role="dialog"].z-popover')
+      if (menus.length === 0 && popovers.length > 0) {
+        escape(popovers[popovers.length - 1])
+        return
+      }
       if (menus.length > 0 || document.querySelector('.z-nested, .z-palette')) {
         escape(menus[menus.length - 1])
         return

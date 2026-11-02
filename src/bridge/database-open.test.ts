@@ -32,10 +32,11 @@ describe('Opening a database whose folder is gone', () => {
       readFileSync(new URL(`../../node_modules/@zennotes/${path}`, import.meta.url), 'utf8')
     // The shared ops throw for an absent data.csv ...
     assert.match(pkg('shared-domain/dist/database-ops.js'), /if \(csvText === null\)\n\s+throw new Error\(`Database not found: \$\{rel\}`\);/)
-    // ... core forgets a database the bridge answers null for, and toasts a throw.
+    // ... core forgets a database the bridge answers null for, and toasts a
+    // throw once, recording it so the grid does not ask again (core 2.81.0).
     const store = pkg('app-core/dist/store.js')
     assert.match(store, /if \(!doc\) \{[\s\S]{0,240}await get\(\)\.forgetDatabase\(csvPath\);/)
-    assert.match(store, /\.addToast\(humanIpcError\(err, 'Could not open database'\), 'error'\);/)
+    assert.match(store, /const message = humanIpcError\(err, 'Could not open database'\);[\s\S]{0,240}databasesLoadError[\s\S]{0,240}\.addToast\(message, 'error'\);/)
     assert.match(pkg('bridge-contract/dist/bridge.d.ts'), /openDatabase\(relPath: string\): Promise<DatabaseDoc \| null>;/)
   })
 })

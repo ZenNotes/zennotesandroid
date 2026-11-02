@@ -2264,8 +2264,8 @@
 
 /* Core 2.81.1 wraps these tools inside the pane, so none runs off a narrow
    one. A phone's line is just short of them: below about 407 CSS px they miss,
-   and part of the row fell to a line of its own. Tighter buttons hold all five
-   on one line down to a 375 px screen. */
+   and the ... menu fell to a line of its own. Tighter buttons hold all five on
+   one line down to a 360 px screen, the commonest Android width. */
 .zn-mobile.zn-phone
   header.glass-header:has(button[title='Toggle the underlying CSV text'])
   > .ml-auto {
@@ -2276,7 +2276,7 @@
   header.glass-header:has(button[title='Toggle the underlying CSV text'])
   > .ml-auto
   > button.px-3 {
-  padding-inline: 0.5rem;
+  padding-inline: 0.375rem;
 }
 
 /* Trash/Archive rows: Restore/Delete crowd the title on a phone — wrap the

@@ -55,6 +55,6 @@ describe('the database header on a phone', () => {
     assert.match(view, /"ml-auto flex max-w-full flex-wrap items-center justify-end gap-1\.5"/)
     assert.match(button, /px-3/)
     assert.equal(shellDeclaration(tools, 'column-gap'), '0.25rem')
-    assert.equal(shellDeclaration(`${tools} > button.px-3`, 'padding-inline'), '0.5rem')
+    assert.equal(shellDeclaration(`${tools} > button.px-3`, 'padding-inline'), '0.375rem')
   })
 })

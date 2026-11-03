@@ -19,6 +19,15 @@
  * A lost cache or unknown timestamp causes a full read. Like other
  * metadata-based caches, this relies on the provider updating mtime or size
  * when content changes; same-size writes preserving mtime cannot be detected.
+ *
+ * A vault's first sync also holds back a Welcome note nobody has touched. The
+ * coordinator raises a conflict for any local file a Cloud file disagrees
+ * with, and on a first link it has no history to tell which is newer, so every
+ * fresh install would stop on the text the app wrote for itself. Held back,
+ * the seed takes Cloud's copy when there is one and goes up as a new note on
+ * the run's next scan when there is not. It only ever leaves through the usual
+ * vouched write, against the bytes scanned here, so words typed into it after
+ * this scan still raise the conflict.
  */
 import type {
   CloudSyncContent,
@@ -34,12 +43,17 @@ import {
   PortableCloudSyncRepository,
   type PortableCloudSyncFileSystem
 } from '@zennotes/shared-domain/cloud-sync-portable-filesystem'
-import type { CloudSyncLocalItem, CloudSyncState } from '@zennotes/shared-domain/cloud-sync-engine'
+import type {
+  CloudSyncLocalItem,
+  CloudSyncState,
+  CloudSyncTrackedItem
+} from '@zennotes/shared-domain/cloud-sync-engine'
 import type { NativeFs } from './native-fs'
 import { cloudSyncWorkBudget, decodeCloudSyncBase64 } from './cloud-sync-work'
 import { CLOUD_SYNC_INLINE_UPLOAD_LIMIT_BYTES, rememberMobileUploadSource } from './mobile-direct-upload'
 import { isNotFoundError } from './fs-errors'
 import { randomUUID } from './uuid'
+import { isUntouchedWelcomeSeed } from './welcome-note'
 import { NativeCloudStaging, type CloudStagingNative } from './cloud-sync-staging'
 
 export interface ScanCacheEntry {
@@ -58,12 +72,15 @@ type CloudSyncNativeFiles = Pick<NativeFs, 'readdirStrict' | 'readForSync' | 'st
 
 export interface ScanCacheStore {
   loadTracked(): Promise<CloudSyncState | null>
+  /** True only for a sync run that verifiably has no stored state yet. */
+  isFirstSync(): Promise<boolean>
   loadCache(): Promise<unknown>
   saveCache(cache: ScanCache): Promise<void>
 }
 
 export class CachedCloudSyncRepository extends PortableCloudSyncRepository {
   private readonly contentFiles: NativeCloudSyncContent
+  private readonly heldBackSeeds: HeldBackSeeds
 
   constructor(
     fs: PortableCloudSyncFileSystem,
@@ -72,6 +89,7 @@ export class CachedCloudSyncRepository extends PortableCloudSyncRepository {
     private readonly onChanged: () => void = () => {}
   ) {
     const contentFiles = new NativeCloudSyncContent(fs, native)
+    const heldBackSeeds: HeldBackSeeds = new Map()
     const staging = isStagingNative(native)
       ? new NativeCloudStaging(native, (path) => TEXT_EXTENSIONS.has(extension(path)), (path) => contentFiles.read(path))
       : null
@@ -83,8 +101,10 @@ export class CachedCloudSyncRepository extends PortableCloudSyncRepository {
         },
         // A staged publish keeps its own rollback copy, so the next read or
         // write looks for one again.
-        applyStagedCloudContent: async (...args: Parameters<NativeCloudStaging['apply']>) => {
-          try { return await staging.apply(...args) } finally { contentFiles.recheckRecovery() }
+        applyStagedCloudContent: async (...[change, previous, file]: Parameters<NativeCloudStaging['apply']>) => {
+          try {
+            return await staging.apply(change, previous ?? heldBackSeedAsTracked(heldBackSeeds, change), file)
+          } finally { contentFiles.recheckRecovery() }
         },
         resolveStagedCloudConflict: async (input: Parameters<NativeCloudStaging['resolve']>[0]) => {
           try { return await staging.resolve(input) } finally { contentFiles.recheckRecovery() }
@@ -103,6 +123,7 @@ export class CachedCloudSyncRepository extends PortableCloudSyncRepository {
     }
     super(sourceAwareFs)
     this.contentFiles = contentFiles
+    this.heldBackSeeds = heldBackSeeds
     this.staging = staging
   }
 
@@ -116,13 +137,27 @@ export class CachedCloudSyncRepository extends PortableCloudSyncRepository {
     await this.contentFiles.assertReady(true)
     const trackedSha = trackedShaByPath(await this.store.loadTracked().catch(() => null))
     const cache = normalizeScanCache(await this.store.loadCache().catch(() => null))
+    // A state that cannot be read may hold this note, and a tracked note
+    // missing from a scan would go up as a deletion, so doubt keeps it in view.
+    const firstSync = await this.store.isFirstSync().catch(() => false)
     const nextCache: ScanCache = {}
     const items: CloudSyncLocalItem[] = []
     await this.walkCached('', trackedSha, cache, nextCache, items)
     if (Object.keys(cache).some((path) => !nextCache[path])) this.onChanged()
     // Cache loss is only a slow next scan — never let it fail the sync run.
     await this.store.saveCache(nextCache).catch(() => {})
-    return items.sort((left, right) => left.path.localeCompare(right.path))
+    this.heldBackSeeds.clear()
+    return items
+      .filter((item) => {
+        if (!firstSync || !isUntouchedWelcomeSeed(item.path, item.content.sha256)) return true
+        this.heldBackSeeds.set(cloudSyncPathKey(item.path), item)
+        return false
+      })
+      .sort((left, right) => left.path.localeCompare(right.path))
+  }
+
+  override async apply(...[change, previous]: Parameters<PortableCloudSyncRepository['apply']>) {
+    return super.apply(change, previous ?? heldBackSeedAsTracked(this.heldBackSeeds, change))
   }
 
   private async walkCached(
@@ -328,6 +363,25 @@ class NativeCloudSyncContent {
       // There is a backup only when an original was moved aside.
       if (completed && before) await this.fs.deleteFile(backup).catch(() => { this.recoveryChecked = false })
     }
+  }
+}
+
+type HeldBackSeeds = Map<string, CloudSyncLocalItem>
+
+/** The held-back seed at a change's path, as what this device last knew of it. */
+function heldBackSeedAsTracked(
+  seeds: HeldBackSeeds,
+  change: { item_id: string; path: string }
+): CloudSyncTrackedItem | undefined {
+  const seed = seeds.get(cloudSyncPathKey(change.path))
+  return seed && {
+    item_id: change.item_id,
+    path: seed.path,
+    kind: seed.kind,
+    revision: 0,
+    sha256: seed.content.sha256,
+    byte_length: seed.content.byte_length,
+    media_type: seed.content.media_type
   }
 }
 

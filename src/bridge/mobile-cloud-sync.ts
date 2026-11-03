@@ -384,15 +384,24 @@ function hostVault(vault: MobileVault, cacheScan = false): CloudSyncHostVault {
       loadTracked: async () => {
         // Review/restore actions always receive real bytes, not scan placeholders.
         if (!cacheScan) return null
-        const link = await readJson(await linkPath(vaultKey))
-        if (!isRecord(link) || typeof link.base_url !== 'string' || typeof link.vault_id !== 'string') return null
-        return await readJson(await statePath(vaultKey, link.base_url, link.vault_id)) as CloudSyncState | null
+        return ((await linkedState(vaultKey)) ?? null) as CloudSyncState | null
       },
+      // Review and restore actions want every file, so only a sync run asks.
+      isFirstSync: async () => cacheScan && (await linkedState(vaultKey)) === null,
       loadCache: async () => readJson(await scanCachePath(vaultKey)),
       saveCache: async (cache: ScanCache) => writeJson(await scanCachePath(vaultKey), cache)
     }, changes.markChanged),
     refresh: changes.refresh
   }
+}
+
+/** The state stored for this vault's link: null if none yet, undefined with no link. */
+async function linkedState(vaultKey: string): Promise<unknown> {
+  const link = await readJson(await linkPath(vaultKey))
+  if (!isRecord(link) || typeof link.base_url !== 'string' || typeof link.vault_id !== 'string') {
+    return undefined
+  }
+  return readJson(await statePath(vaultKey, link.base_url, link.vault_id))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

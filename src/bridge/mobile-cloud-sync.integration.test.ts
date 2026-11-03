@@ -8,6 +8,52 @@ import type { CloudSyncState } from '@zennotes/shared-domain/cloud-sync-engine'
 import { loadMobileModule } from '../../tooling/load-mobile-module.ts'
 import { withoutRandomUUID } from '../../tooling/without-random-uuid.ts'
 
+const { WELCOME_NOTE_BODY, WELCOME_NOTE_PATH, isUntouchedWelcomeSeed } = await loadMobileModule('./src/bridge/welcome-note')
+
+const SEED_OF_2026_10_08 = `# Welcome to ZenNotes
+
+This is your first note. It is yours: edit it, add to it, or delete it once you have found your feet.
+
+## The circle
+
+The small circle in the bottom corner is how you get around. Tap it:
+
+- **New**: write a note
+- **Search**: find anything, instantly
+- **Browse**: your folders, tasks, and tags
+- **More**: everything else, including Settings
+
+## Try it now
+
+- [ ] Tap this checkbox to tick it off
+- [ ] Tap the circle, then **New**, and write down a thought
+- [ ] Tap the circle, then **Browse**, to see your folders
+
+## Just plain text
+
+Every note is a plain Markdown file: **bold**, *italic*, lists, and checkboxes are all simple text. No database, no lock-in. Your notes stay readable anywhere, forever.
+
+## Organize with tags and folders
+
+Type \`#\` in any note to tag it, like #ideas on this one. Tags appear under **Browse → Tags** the moment you write them.
+
+Folders work the way you expect: create one in **Browse → New folder**, and move any note with the circle → **More** → **Move to…**.
+
+## Capture from anywhere
+
+Reading something worth keeping? Share it from any app and choose **ZenNotes**. It lands in your notes, ready when you are.
+
+## Where your notes live
+
+You picked a home for your notes when you first opened the app. To move between **iCloud** and this device, or to keep several vaults and switch between them, tap the circle → **More** → **Settings** → **Vault**.
+
+## When you want more
+
+ZenNotes also does math, diagrams, tables, tasks with due dates, and daily notes. For a folder of example notes showing everything, tap the circle → **More** → **All commands…** and run **Generate demo tour**.
+
+Happy writing.
+`
+
 function textContent(text: string): CloudSyncContent {
   return {
     encoding: 'utf8', data: text, byte_length: Buffer.byteLength(text),
@@ -391,6 +437,102 @@ describe('mobile Cloud adapter wiring', () => {
   })
 })
 
+
+describe('a Welcome note on the first Cloud link', () => {
+  const edited = () => WELCOME_NOTE_BODY.replace('- [ ]', '- [x]')
+  const paths = (mutations: CloudSyncMutation[]) => mutations.map((mutation) => 'path' in mutation ? mutation.path : mutation.type)
+
+  it('gives an untouched seed up to the Cloud copy, and leaves that copy alone', async () => {
+    const h = await fixture({ [WELCOME_NOTE_PATH]: WELCOME_NOTE_BODY, 'note.md': 'Mine' })
+    const cloud = h.remoteText(WELCOME_NOTE_PATH, 'An older seed from another phone')
+    const summary = await h.sync()
+    assert.deepEqual(summary.pending_conflicts, [])
+    assert.equal(h.files.get(WELCOME_NOTE_PATH)?.bytes.toString(), 'An older seed from another phone')
+    assert.deepEqual(paths(h.uploaded), ['note.md'])
+    assert.equal((await h.remote.manifest('vault-1')).data.find((item) => item.path === WELCOME_NOTE_PATH)?.revision, cloud.revision)
+
+    h.uploaded.length = 0
+    const again = await h.sync()
+    assert.deepEqual(again.pending_conflicts, [])
+    assert.deepEqual(h.uploaded, [])
+  })
+
+  it('gives up a seed an older version of the app wrote', async () => {
+    const h = await fixture({ [WELCOME_NOTE_PATH]: SEED_OF_2026_10_08 })
+    h.remoteText(WELCOME_NOTE_PATH, 'Written on another device')
+    assert.deepEqual((await h.sync()).pending_conflicts, [])
+    assert.equal(h.files.get(WELCOME_NOTE_PATH)?.bytes.toString(), 'Written on another device')
+    assert.deepEqual(h.uploaded, [])
+  })
+
+  it('gives up a seed that a Cloud join moved to the vault root', async () => {
+    const h = await fixture({ 'Welcome to ZenNotes.md': WELCOME_NOTE_BODY })
+    h.remoteText('Welcome to ZenNotes.md', 'Written on another device')
+    assert.deepEqual((await h.sync()).pending_conflicts, [])
+    assert.equal(h.files.get('Welcome to ZenNotes.md')?.bytes.toString(), 'Written on another device')
+    assert.deepEqual(h.uploaded, [])
+  })
+
+  it('still raises a conflict for a note the person edited, keeping both versions', async () => {
+    const h = await fixture({ [WELCOME_NOTE_PATH]: edited() })
+    h.remoteText(WELCOME_NOTE_PATH, 'An older seed from another phone')
+    const summary = await h.sync()
+    assert.deepEqual(summary.pending_conflicts.map((conflict: { path: string }) => conflict.path), [WELCOME_NOTE_PATH])
+    assert.equal(h.files.get(WELCOME_NOTE_PATH)?.bytes.toString(), edited())
+    assert.deepEqual(h.uploaded, [])
+    const details = await h.api.getMobileCloudConflict(h.vault, summary.pending_conflicts[0].id)
+    assert.equal(details.local.text, edited())
+    assert.equal(details.cloud.text, 'An older seed from another phone')
+  })
+
+  it('still raises a conflict when the person edits the seed during the first sync', async () => {
+    const h = await fixture({ [WELCOME_NOTE_PATH]: WELCOME_NOTE_BODY })
+    h.remoteText(WELCOME_NOTE_PATH, 'An older seed from another phone')
+    const read = h.vault.fs.readForSync
+    h.vault.fs.readForSync = async (path: string, textCandidate: boolean) => {
+      const file = await read(path, textCandidate)
+      // The scan has its bytes; the edit lands before the Cloud copy arrives.
+      if (path === WELCOME_NOTE_PATH) {
+        h.vault.fs.readForSync = read
+        h.put(path, edited())
+      }
+      return file
+    }
+    const summary = await h.sync()
+    assert.deepEqual(summary.pending_conflicts.map((conflict: { path: string }) => conflict.path), [WELCOME_NOTE_PATH])
+    assert.equal(h.files.get(WELCOME_NOTE_PATH)?.bytes.toString(), edited())
+  })
+
+  it('leaves a seed Cloud has no copy of to go up as a new note, and never as a deletion', async () => {
+    const h = await fixture({ [WELCOME_NOTE_PATH]: WELCOME_NOTE_BODY })
+    const summary = await h.sync()
+    assert.deepEqual(summary.pending_conflicts, [])
+    assert.deepEqual(h.uploaded.map((mutation) => mutation.type), ['upsert'])
+    assert.deepEqual(paths(h.uploaded), [WELCOME_NOTE_PATH])
+    assert.equal(h.files.get(WELCOME_NOTE_PATH)?.bytes.toString(), WELCOME_NOTE_BODY)
+
+    h.uploaded.length = 0
+    await h.sync()
+    assert.deepEqual(h.uploaded, [])
+  })
+
+  it('treats an untouched seed like any other note once the vault has synced', async () => {
+    const h = await fixture({ [WELCOME_NOTE_PATH]: WELCOME_NOTE_BODY })
+    await h.sync()
+    h.uploaded.length = 0
+    h.remoteText(WELCOME_NOTE_PATH, 'Updated on another device')
+    assert.deepEqual((await h.sync()).pending_conflicts, [])
+    assert.equal(h.files.get(WELCOME_NOTE_PATH)?.bytes.toString(), 'Updated on another device')
+    assert.deepEqual(h.uploaded, [])
+  })
+
+  it('lists the text this version seeds, so a rewrite cannot forget its hash', () => {
+    const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
+    assert.equal(isUntouchedWelcomeSeed(WELCOME_NOTE_PATH, sha256(WELCOME_NOTE_BODY)), true)
+    assert.equal(isUntouchedWelcomeSeed(WELCOME_NOTE_PATH, sha256(edited())), false)
+    assert.equal(isUntouchedWelcomeSeed('inbox/Copy.md', sha256(WELCOME_NOTE_BODY)), false)
+  })
+})
 
 describe('deleted Cloud vault recovery (#791)', () => {
   const serviceError = (status: number, code: string | null) => Object.assign(

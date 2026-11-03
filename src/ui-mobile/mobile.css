@@ -1875,6 +1875,49 @@
 
 /* ---- Home: keep it minimal ------------------------------------------------ */
 
+/* The open vault, one tap from the switcher (zennotesandroid#143). */
+.zn-mobile.zn-phone [data-home-nav] header {
+  align-items: center;
+}
+
+.zn-mobile.zn-phone .zn-home-vault-host {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+}
+
+.zn-mobile.zn-phone .zn-home-vault-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 1px solid rgb(var(--z-fg) / 0.14);
+  border-radius: 9999px;
+  background: rgb(var(--z-fg) / 0.05);
+  color: rgb(var(--z-fg) / 0.85);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.zn-mobile.zn-phone .zn-home-vault-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zn-mobile.zn-phone .zn-home-vault-chip svg {
+  flex-shrink: 0;
+  color: rgb(var(--z-fg) / 0.45);
+}
+
+/* Core's way back to a hidden sidebar: a phone has no sidebar to go back to. */
+.zn-mobile.zn-phone [data-sidebar-restore] {
+  display: none;
+}
+
 /* The quick-action chip row duplicates the ⊕ create sheet — drop it. */
 .zn-mobile.zn-phone [data-home-nav] div.mb-10.flex-wrap.gap-2 {
   display: none;

@@ -14,7 +14,7 @@ import { Keyboard } from '@capacitor/keyboard'
 import { Capacitor } from '@capacitor/core'
 import { getShellSnapshot, useShellSnapshot, subscribeShell, getAdjacentNotePath,
   getTagPresenceSnapshot, subscribeTagPresence } from '@zennotes/app-core/shell'
-import { getBrowseSnapshot, requestCreateBrowseFolder, requestRenameBrowseDatabase,
+import { getBrowseSnapshot, useBrowseSnapshot, requestCreateBrowseFolder, requestRenameBrowseDatabase,
   requestMoveBrowseDirectory, requestDeleteBrowseDirectory, type BrowseActionHost } from '@zennotes/app-core/browse'
 import { getWorkspaceSnapshot, useWorkspaceSnapshot, subscribeWorkspace, readPersistedHomeState,
   configureWorkspacePresentation, pickLocalVault, openLocalVault, connectRemoteProfile, refreshRemoteProfiles } from '@zennotes/app-core/workspace'
@@ -2757,6 +2757,51 @@ function SettingsVaultQuickSwitch(): React.JSX.Element {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Home names the open vault, one tap from the switcher (zennotesandroid#143).
+// The drawer's header does both, but only once the drawer is open, so someone
+// who keeps a work and a personal vault could not tell which one they were in.
+// A tablet keeps the sidebar's vault menu, so this is phone only.
+// ---------------------------------------------------------------------------
+function HomeVaultChip(): React.JSX.Element {
+  const name = useBrowseSnapshot().vault?.name ?? 'ZenNotes'
+  return (
+    <button
+      type="button"
+      className="zn-home-vault-chip"
+      aria-label={`Current vault: ${name}. Switch vault`}
+      onClick={() => openMobileSheet('vaults')}
+    >
+      <span>{name}</span>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6" />
+      </svg>
+    </button>
+  )
+}
+
+function useHomeVaultChip(): void {
+  useEffect(() => {
+    if (!isPhoneWidth()) return
+    const container = document.createElement('div')
+    container.className = 'zn-home-vault-host'
+    const root = ReactDOM.createRoot(container)
+    root.render(<HomeVaultChip />)
+    const sync = (): void => {
+      const header = document.querySelector('[data-home-nav] header')
+      if (header && container.parentElement !== header) header.appendChild(container)
+    }
+    const observer = new MutationObserver(sync)
+    observer.observe(document.body, { childList: true, subtree: true })
+    sync()
+    return () => {
+      observer.disconnect()
+      root.unmount()
+      container.remove()
+    }
+  }, [])
+}
+
 function useVaultSettingsRows(): void {
   useEffect(() => {
     const access = vaultSettingsAccessForLayout(isPhoneWidth())
@@ -3324,6 +3369,7 @@ function MobileShellRoot(): React.JSX.Element {
   useKanbanCardDrag()
   useYouTubeLiteEmbeds()
   useVaultSettingsRows()
+  useHomeVaultChip()
   useLayoutSettingsRow()
   useCloudSettingsRow()
   useAboutGitHubLinks()

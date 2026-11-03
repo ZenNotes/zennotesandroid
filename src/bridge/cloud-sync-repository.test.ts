@@ -10,8 +10,8 @@ import type { CloudSyncRepository } from '@zennotes/shared-domain/cloud-sync-coo
 import { loadMobileModule } from '../../tooling/load-mobile-module.ts'
 import { withoutRandomUUID } from '../../tooling/without-random-uuid.ts'
 
-const { CachedCloudSyncRepository, mutateWithMobileDirectUploads } = await loadMobileModule([
-  './src/bridge/cloud-sync-repository', './src/bridge/mobile-direct-upload'
+const { CachedCloudSyncRepository, mutateWithMobileDirectUploads, WELCOME_NOTE_BODY, WELCOME_NOTE_PATH } = await loadMobileModule([
+  './src/bridge/cloud-sync-repository', './src/bridge/mobile-direct-upload', './src/bridge/welcome-note'
 ])
 const { CloudSyncCoordinator } = await loadMobileModule('@zennotes/shared-domain/cloud-sync-coordinator')
 
@@ -31,6 +31,7 @@ function harness(initial: Record<string, string | Buffer> = { 'note.md': 'Hello'
   let onWrite: ((path: string) => void) | undefined
   let onRename: ((from: string, to: string) => void) | undefined
   let onCopy: ((from: string, to: string) => void) | undefined
+  let firstSync = false
   const put = (path: string, body: string | Buffer) => {
     files.set(path, { bytes: Buffer.from(body), mtime: ++clock })
   }
@@ -118,6 +119,10 @@ function harness(initial: Record<string, string | Buffer> = { 'note.md': 'Hello'
       if (failures.stateRead) throw new Error('State unavailable')
       return state
     },
+    isFirstSync: async () => {
+      if (failures.stateRead) throw new Error('State unavailable')
+      return firstSync
+    },
     loadCache: async () => {
       if (failures.cacheRead) throw new Error('Cache unavailable')
       return cache
@@ -169,6 +174,7 @@ function harness(initial: Record<string, string | Buffer> = { 'note.md': 'Hello'
     setWriteHook: (hook: typeof onWrite) => { onWrite = hook },
     setRenameHook: (hook: typeof onRename) => { onRename = hook },
     setCopyHook: (hook: typeof onCopy) => { onCopy = hook },
+    setFirstSync: (value: boolean) => { firstSync = value },
     get cache() { return cache }, set cache(next: unknown) { cache = next },
     get state() { return state }, set state(next: CloudSyncState | null) { state = next }
   }
@@ -759,5 +765,92 @@ describe('bridge calls per pulled file', () => {
     assert.equal(h.files.get('note.md')?.bytes.toString(), 'Cloud version')
     await assert.rejects(repository.apply(upsert(3, 'other.md', 'Other'), undefined), /needs recovery/)
     assert.equal(h.files.has('other.md'), false)
+  })
+})
+
+describe('a Welcome note on the first scan of a linked vault', () => {
+  const scanned = async (h: ReturnType<typeof harness>) => (await h.repository.scan()).map((item) => item.path)
+  const seeded = () => harness({ [WELCOME_NOTE_PATH]: WELCOME_NOTE_BODY, 'note.md': 'Mine' })
+  const edited = WELCOME_NOTE_BODY.replace('- [ ]', '- [x]')
+  const cloud = Buffer.from('Written on another device')
+  const reference = {
+    item_id: 'cloud-welcome', revision: 3, encoding: 'utf8', sha256: createHash('sha256').update(cloud).digest('hex'),
+    byte_length: cloud.length, media_type: 'text/markdown'
+  }
+  const change = {
+    sequence: 3, item_id: reference.item_id, type: 'upsert' as const, path: WELCOME_NOTE_PATH,
+    previous_path: null, revision: reference.revision, content_ref: reference
+  }
+  /** A repository that downloads a large Cloud revision into staging, as a real shell does. */
+  async function staged(h: ReturnType<typeof harness>) {
+    const repository = new CachedCloudSyncRepository(h.fs, {
+      ...h.native,
+      statVerified: async (path: string) => h.fs.stat(path),
+      download: async (options: { to: string }) => { h.put(options.to, cloud) },
+      rename: h.fs.rename, deleteFile: h.fs.deleteFile, mkdir: async () => {},
+      readText: async (path: string) => h.files.get(path)!.bytes.toString()
+    }, h.store)
+    await repository.scan()
+    const file = await repository.stageCloudContent!({
+      reference, previewLimitBytes: 0, allowInsecureLoopback: false,
+      getInstruction: async () => ({
+        item_id: reference.item_id, revision: reference.revision,
+        content: { encoding: reference.encoding, sha256: reference.sha256, byte_length: reference.byte_length, media_type: reference.media_type },
+        download: { url: 'https://objects.example.test/cloud-welcome/3', method: 'GET', headers: {},
+          expires_at: new Date(Date.now() + 300_000).toISOString() }
+      })
+    })
+    return { repository, file }
+  }
+
+  it('is held back only while the vault has no sync state', async () => {
+    const h = seeded()
+    assert.deepEqual(await scanned(h), [WELCOME_NOTE_PATH, 'note.md'])
+    h.setFirstSync(true)
+    assert.deepEqual(await scanned(h), ['note.md'])
+    h.setFirstSync(false)
+    assert.deepEqual(await scanned(h), [WELCOME_NOTE_PATH, 'note.md'])
+  })
+
+  it('stays in view when the sync state cannot be read, so it can never go up as a deletion', async () => {
+    const h = seeded()
+    h.setFirstSync(true)
+    h.failures.stateRead = true
+    assert.deepEqual(await scanned(h), [WELCOME_NOTE_PATH, 'note.md'])
+  })
+
+  it('stays in view once edited', async () => {
+    const h = harness({ [WELCOME_NOTE_PATH]: edited })
+    h.setFirstSync(true)
+    assert.deepEqual(await scanned(h), [WELCOME_NOTE_PATH])
+  })
+
+  it('takes a Cloud revision that arrives through staging', async () => {
+    const h = seeded()
+    h.setFirstSync(true)
+    const { repository, file } = await staged(h)
+    assert.equal(await repository.applyStagedCloudContent!(change, undefined, file), undefined)
+    assert.equal(h.files.get(WELCOME_NOTE_PATH)?.bytes.toString(), cloud.toString())
+  })
+
+  it('keeps words typed into it after the scan when a Cloud revision arrives through staging', async () => {
+    const h = seeded()
+    h.setFirstSync(true)
+    const { repository, file } = await staged(h)
+    h.put(WELCOME_NOTE_PATH, edited)
+    const conflict = await repository.applyStagedCloudContent!(change, undefined, file)
+    assert.equal(conflict?.code, 'LOCAL_EDIT_CONFLICT')
+    assert.equal(h.files.get(WELCOME_NOTE_PATH)?.bytes.toString(), edited)
+  })
+
+  it('does not speak for any other file a Cloud revision lands on', async () => {
+    const h = seeded()
+    h.setFirstSync(true)
+    const repository = new CachedCloudSyncRepository(h.fs, h.native, h.store)
+    await repository.scan()
+    const { content_ref: _reference, ...inline } = change
+    const conflict = await repository.apply({ ...inline, path: 'note.md', content: content('Cloud') }, undefined)
+    assert.equal(conflict?.code, 'LOCAL_EDIT_CONFLICT')
+    assert.equal(h.files.get('note.md')?.bytes.toString(), 'Mine')
   })
 })

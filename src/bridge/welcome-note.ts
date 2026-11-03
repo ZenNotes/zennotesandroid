@@ -9,6 +9,34 @@
 
 export const WELCOME_NOTE_PATH = 'inbox/Welcome to ZenNotes.md'
 
+/** The seed's path once a Cloud join moved a vault's notes to its root. */
+const WELCOME_NOTE_ROOT_PATH = 'Welcome to ZenNotes.md'
+
+/**
+ * SHA-256 of every text a phone has ever seeded, both shells' included.
+ * WELCOME_NOTE_BODY's own hash joins this list whenever the text changes, and
+ * none ever leaves: a vault seeded by that version may still be waiting for
+ * its first Cloud link, and these bytes are what proves nobody wrote in it.
+ */
+const WELCOME_NOTE_SEED_SHA256 = new Set([
+  '49be342021eadb1024c953dd4deff6bb11b55bfa3abadf48e31e5f70d80bdaa7',
+  '510856badfc9ebe69be627f0b341f36f2cfeb836d252782e34b6132e90f43c35',
+  '65e808990047a85fed1d0f66a096da837c88f337f0b0812fee6de83d56129658',
+  'd0b1476aac87dc7276c0394cfb07748a55694c3309d7a03495f4bbeba61f2326',
+  '45443b253ac253f0af68a29f0c4430888ea19b84d9757a797aacdc0d33a1fe72',
+  '99a80fa71dc5365b0ca8fe78d4dc1abc1f66a060de705e630244a2274fb7177e',
+  'e7ef768d3df8d6da56b614e2bc9fcaa3e374c31acde7a222baa871495c775e06',
+  'b7a57b91f73ceb738d20a3b18f6b7381ac17679d5b59ee21a21b59741782309a',
+  '411229cbda35559d4722497eb8981e273a2c87d9efcc403980305cb435faadc7',
+  '9efef627db5ae07699ee6854e2b0f927f2d57a324a55624d49a71f7858690dc3',
+  '47226807945dc6e94656b2ebfb5d4fb7fdadfa43540874c3078e4a1793888383'
+])
+
+/** Whether this file is still the seed exactly as the app wrote it. */
+export function isUntouchedWelcomeSeed(path: string, sha256: string): boolean {
+  return (path === WELCOME_NOTE_PATH || path === WELCOME_NOTE_ROOT_PATH) && WELCOME_NOTE_SEED_SHA256.has(sha256)
+}
+
 export const WELCOME_NOTE_BODY = `# Welcome to ZenNotes
 
 This is your first note. It is yours: edit it, add to it, or delete it once you have found your feet.

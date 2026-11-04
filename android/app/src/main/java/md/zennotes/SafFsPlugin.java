@@ -588,6 +588,31 @@ public class SafFsPlugin extends Plugin {
         }
     }
 
+    /**
+     * deleteDocument takes a directory with everything in it, so a folder that
+     * must only go while empty is listed fresh, past the cache, first.
+     */
+    @PluginMethod
+    public void rmdirIfEmpty(PluginCall call) {
+        Uri tree = requireTree(call);
+        if (tree == null) return;
+        try {
+            String rel = clean(call.getString("path"));
+            Entry e = resolve(tree, rel);
+            if (e == null) throw new FileNotFoundException(rel);
+            if (!e.isDir) throw new Exception("Not a folder");
+            if (!listChildren(tree, e.docId).isEmpty()) throw new Exception("Folder is not empty");
+            if (!DocumentsContract.deleteDocument(resolver(), docUri(tree, e.docId))) {
+                throw new Exception("Delete refused");
+            }
+            invalidateParent(tree, rel);
+            listings.remove(cacheKey(tree, e.docId));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("rmdirIfEmpty failed: " + e.getMessage());
+        }
+    }
+
     @PluginMethod
     public void getUri(PluginCall call) {
         Uri tree = requireTree(call);

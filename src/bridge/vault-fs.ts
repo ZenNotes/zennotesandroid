@@ -267,12 +267,17 @@ export class MobileVault {
 
   async ensureVaultLayout(): Promise<void> {
     const settings = await this.getVaultSettings()
+    // The inbox waits for a vault that states its layout, or for its first note
+    // (every write makes its folder). A folder opened before its notes arrived
+    // infers its layout from what lands in it (#1023), and an inbox made here
+    // then sat among the notes as an empty folder once that said root mode.
+    const stated = (await this.fs.readTextOrNull(`${INTERNAL_VAULT_DIR}/vault.json`)) !== null
     // The RESOLVED directory of each system folder (vault.json
     // `systemFolderPaths`), not the default name — creating `inbox/` while
     // the settings point the inbox at `01 - Entry/` would leave a stray
     // directory every classifier then reads as the system inbox.
     const folders: NoteFolder[] =
-      settings.primaryNotesLocation === 'root'
+      settings.primaryNotesLocation === 'root' || !stated
         ? ['quick', 'archive', 'trash']
         : ['inbox', 'quick', 'archive', 'trash']
     for (const f of folders) {
@@ -408,6 +413,7 @@ export class MobileVault {
   }
 
   async setVaultSettings(next: VaultSettings): Promise<VaultSettings> {
+    const before = await this.getVaultSettings()
     const normalized = this.normalizeVaultSettings(next, 'inbox')
     await this.fs.mkdir(INTERNAL_VAULT_DIR)
     await this.fs.writeText(
@@ -418,9 +424,28 @@ export class MobileVault {
     if (normalized.primaryNotesLocation === 'inbox') {
       // The RESOLVED inbox, not the literal one (see ensureVaultLayout).
       await this.fs.mkdir(resolveFolderPath('inbox', normalized.systemFolderPaths))
+    } else if (before.primaryNotesLocation === 'inbox') {
+      await this.removeEmptyDefaultInbox(normalized.systemFolderPaths)
     }
     emitVaultChange({ kind: 'change', path: '.zennotes/vault.json', folder: 'inbox', scope: 'vault-settings' })
     return normalized
+  }
+
+  /**
+   * Leaving inbox mode, an inbox with nothing in it would only show up as an
+   * empty folder among the notes. While the vault was in inbox mode that
+   * directory was the system's, not a folder of the reader's. A folder the
+   * inbox was remapped to is theirs by name, and a dotfile counts as something:
+   * neither is touched. Non-recursive, so a file landing after the look stays.
+   */
+  private async removeEmptyDefaultInbox(systemFolderPaths?: SystemFolderPaths | null): Promise<void> {
+    if (resolveFolderPath('inbox', systemFolderPaths) !== 'inbox') return
+    try {
+      if ((await this.fs.readdir('inbox')).length > 0) return
+      await this.fs.rmdirIfEmpty('inbox')
+    } catch {
+      // Already gone, or something arrived: the folder simply stays as it is.
+    }
   }
 
   async rootContentHiddenByInboxMode(): Promise<boolean> {

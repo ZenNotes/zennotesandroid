@@ -78,3 +78,62 @@ test('a resume that settles the layout re-reads it', async () => {
   await vault.rescan()
   assert.equal(await layout(vault), 'root')
 })
+
+// The inbox as an empty folder among the notes, once the vault reads root mode.
+function layoutFixture(vaultJson: string | null, inboxEntries: string[] = []) {
+  const vault = new MobileVault('Fixture')
+  const made: string[] = []
+  const removed: string[] = []
+  Object.assign(vault, {
+    fs: {
+      rootPath: '/fixture',
+      readdir: async (dir: string) =>
+        dir === 'inbox' ? inboxEntries.map((name) => ({ name, type: 'file' })) : [],
+      readTextOrNull: async () => vaultJson,
+      writeText: async () => {},
+      mkdir: async (dir: string) => { made.push(dir) },
+      rmdirIfEmpty: async (dir: string) => { removed.push(dir) },
+      rmdir: async () => { throw new Error('never the recursive rmdir') }
+    }
+  })
+  return { vault, made, removed }
+}
+const stated = (primary: string, extra: object = {}) => JSON.stringify({ primaryNotesLocation: primary, ...extra })
+
+test('a folder that states no layout gets no inbox on open', async () => {
+  const { vault, made } = layoutFixture(null)
+  await vault.ensureVaultLayout()
+  assert.deepEqual(made, ['quick', 'archive', 'trash'])
+})
+
+test('a vault that states inbox mode still gets its inbox on open', async () => {
+  const { vault, made } = layoutFixture(stated('inbox'))
+  await vault.ensureVaultLayout()
+  assert.deepEqual(made, ['inbox', 'quick', 'archive', 'trash'])
+})
+
+test('going to root mode takes an empty inbox with it', async () => {
+  const { vault, removed } = layoutFixture(stated('inbox'))
+  await vault.setVaultSettings({ ...(await vault.getVaultSettings()), primaryNotesLocation: 'root' })
+  assert.deepEqual(removed, ['inbox'])
+})
+
+test('going to root mode leaves an inbox holding anything, a dotfile included', async () => {
+  for (const entries of [['Welcome.md'], ['.DS_Store']]) {
+    const { vault, removed } = layoutFixture(stated('inbox'), entries)
+    await vault.setVaultSettings({ ...(await vault.getVaultSettings()), primaryNotesLocation: 'root' })
+    assert.deepEqual(removed, [])
+  }
+})
+
+test('a vault already in root mode keeps a folder of its own named inbox', async () => {
+  const { vault, removed } = layoutFixture(stated('root'))
+  await vault.setVaultSettings({ ...(await vault.getVaultSettings()), primaryNotesLocation: 'root' })
+  assert.deepEqual(removed, [])
+})
+
+test('going to root mode leaves a folder the inbox was remapped to', async () => {
+  const { vault, removed } = layoutFixture(stated('inbox', { systemFolderPaths: { inbox: '01 - Entry' } }))
+  await vault.setVaultSettings({ ...(await vault.getVaultSettings()), primaryNotesLocation: 'root' })
+  assert.deepEqual(removed, [])
+})

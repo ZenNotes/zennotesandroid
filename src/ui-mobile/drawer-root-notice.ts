@@ -23,6 +23,22 @@ export function dismissRootNotice(root: string, store: KeyValueStore = localStor
   }
 }
 
+const refreshListeners = new Set<() => void>()
+
+/** A rescan finished (a resume, a pull to refresh). A note landing beside the
+ *  inbox changes nothing the store lists, so an open drawer has nothing else to
+ *  tell it to ask again. */
+export function noteVaultRefreshed(): void {
+  for (const listener of refreshListeners) listener()
+}
+
+export function onVaultRefreshed(listener: () => void): () => void {
+  refreshListeners.add(listener)
+  return () => {
+    refreshListeners.delete(listener)
+  }
+}
+
 type LayoutBridge = {
   getVaultSettings: () => Promise<{ primaryNotesLocation?: string }>
   setVaultSettings: (settings: never) => Promise<unknown>

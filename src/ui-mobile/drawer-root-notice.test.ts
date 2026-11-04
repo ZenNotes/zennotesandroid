@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { dismissRootNotice, rootNoticeDismissed, showRootNotes } from './drawer-root-notice.ts'
+import { dismissRootNotice, noteVaultRefreshed, onVaultRefreshed, rootNoticeDismissed, showRootNotes } from './drawer-root-notice.ts'
 
 function memoryStore(): Pick<Storage, 'getItem' | 'setItem'> {
   const values = new Map<string, string>()
@@ -28,4 +28,15 @@ test('showing root notes changes the layout and keeps the other settings', async
     setVaultSettings: async (settings) => { saved = settings }
   })
   assert.deepEqual(saved, { primaryNotesLocation: 'root', displayName: 'Mine' })
+})
+
+test('a rescan tells whoever is listening, until they stop', () => {
+  let heard = 0
+  const stop = onVaultRefreshed(() => { heard += 1 })
+  noteVaultRefreshed()
+  noteVaultRefreshed()
+  assert.equal(heard, 2)
+  stop()
+  noteVaultRefreshed()
+  assert.equal(heard, 2)
 })

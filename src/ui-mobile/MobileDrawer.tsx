@@ -17,7 +17,7 @@ import { useWorkspaceSnapshot, openLocalVault, pickLocalVault, refreshRemoteProf
 import { openNote, openAppPage } from '@zennotes/app-core/navigation'
 import { showSearch } from '@zennotes/app-core/commands'
 import { setSettingsVisible } from '@zennotes/app-core/settings'
-import { dismissRootNotice, rootNoticeDismissed, showRootNotes } from './drawer-root-notice'
+import { dismissRootNotice, onVaultRefreshed, rootNoticeDismissed, showRootNotes } from './drawer-root-notice'
 import { confirm as confirmApp, prompt as promptApp } from '@zennotes/app-core/dialogs'
 import { captureMobileWorkspace, reportActionError } from './workspace-context'
 import { Keyboard } from '@capacitor/keyboard'
@@ -884,23 +884,30 @@ function useLongPress(): (fn: () => void) => {
 }
 
 /** Notes beside the inbox are out of view in inbox mode: say so, and offer the
- *  way to show them. It asks the vault each time the drawer opens. */
+ *  way to show them. It asks the vault each time the drawer opens, and again
+ *  after a rescan, for notes that land while it is open. */
 function HiddenRootNotesNotice({ vaultRoot }: { vaultRoot: string | null }): React.JSX.Element | null {
   const [hidden, setHidden] = useState(false)
   useEffect(() => {
-    let live = true
-    if (!vaultRoot || rootNoticeDismissed(vaultRoot)) {
-      setHidden(false)
-      return
+    let asked = 0
+    const ask = (): void => {
+      const question = ++asked
+      if (!vaultRoot || rootNoticeDismissed(vaultRoot)) {
+        setHidden(false)
+        return
+      }
+      void window.zen
+        .rootContentHiddenByInboxMode()
+        .then((answer) => {
+          if (question === asked) setHidden(answer)
+        })
+        .catch(() => {})
     }
-    void window.zen
-      .rootContentHiddenByInboxMode()
-      .then((answer) => {
-        if (live) setHidden(answer)
-      })
-      .catch(() => {})
+    ask()
+    const stop = onVaultRefreshed(ask)
     return () => {
-      live = false
+      asked = -1
+      stop()
     }
   }, [vaultRoot])
   if (!hidden || !vaultRoot) return null

@@ -1500,10 +1500,10 @@ function usePinchFontSize(): void {
  */
 /**
  * Desktop-only commands that app-core registers without a runtime gate. None
- * of these can work on iOS (App Store owns updates; no app zoom, floating
- * windows, or PDF export pipeline) — hide their palette rows on any device
- * width. Matched by title prefix against each row's text. A hidden row never
- * takes the highlight or Return (palette-hidden-rows.ts).
+ * of these can work on Android (Play owns updates; no app zoom, floating
+ * windows, or PDF export pipeline), so their palette rows hide on any device
+ * width. Matched by inclusion in each row's text. A hidden row never takes the
+ * highlight or Return (palette-hidden-rows.ts).
  */
 const DESKTOP_ONLY_COMMAND_TITLES = [
   'Open Help',

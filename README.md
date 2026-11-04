@@ -19,7 +19,7 @@ boundaries:check` to verify archives, installed versions, singleton
 editor/React peers, and imports; it refuses an archive built from a dirty
 upstream tree unless `ZEN_ALLOW_DIRTY_CORE=1` is set for a local try-out.
 `npm run core:adopt -- <core-tag>` swaps in a new release (see "Adopting a
-core release" below).
+newer core" below).
 
 ## Architecture
 
@@ -195,7 +195,7 @@ the emulator for real testing.
 
 `npm run upstream` verifies the package boundary and typechecks the host.
 
-## Adopting a core release
+## Adopting a newer core
 
 The shared packages are released on their own, without a desktop release. In
 the desktop repo, the fix lands on `main` (bumping only the three package
@@ -229,6 +229,25 @@ and stage `package.json`, `package-lock.json`, `vendor/zennotes` and
 `README.md` by path. Finish with a debug build and an emulator pass, and keep
 the previous validated set reachable in git for rollback. A package update must
 not require private core imports.
+
+Most core changes arrive for free, rebuilt and in. Four areas need mirroring by
+hand. Diff the desktop repo between the old and new `sourceCommit` in
+`vendor/zennotes/manifest.json` and check each:
+
+- New `@zennotes/bridge-contract` methods: `src/bridge/mobile-bridge.ts` must
+  implement them, and `npm run typecheck` fails until it does.
+- Desktop `apps/desktop/src/main/vault.ts` semantics: this shell keeps its own
+  copy in `src/bridge/vault-fs.ts` and `vault-core.ts`.
+- New core actions the phone must expose: it has no desktop sidebar or context
+  menus, so a new `requestXxx` export in `@zennotes/app-core/browse` or `notes`
+  needs a row in `src/ui-mobile/MobileDrawer.tsx` or `note-actions.tsx`.
+- New desktop-only palette commands: add their titles to the hide lists in
+  `src/ui-mobile/MobileShell.tsx`, and `palette-hidden-commands.test.ts` holds
+  the phone list against core's titles.
+
+Android's WebView fires `contextmenu` on a long press and iOS does not, so a new
+right-click menu works here without a shell change while the iPhone shell needs
+its `LONG_PRESS_SURFACES` extended. A walk on Android alone will not catch that.
 
 To try an unreleased fix before it is released, build the candidate locally in
 the desktop checkout (`node tooling/scripts/prepare-boundary-release.mjs core

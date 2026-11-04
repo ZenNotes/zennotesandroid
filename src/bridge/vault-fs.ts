@@ -288,10 +288,24 @@ export class MobileVault {
     // layout — trust it even when other loose folders exist at the root (a
     // daily/weekly-notes dir created during a transient mis-inference must
     // never flip a vault into root mode permanently).
+    //
+    // An empty one says nothing, though: this app makes it on first open, so a
+    // folder opened before its notes arrived (Syncthing still copying, a vault
+    // moved over in parts) read as inbox mode for good and showed none of them
+    // (#1023). With nothing inside, reading the root instead cannot hide a note.
     const inboxDir = resolveFolderPath('inbox', systemFolderPaths).toLowerCase()
-    if (entries.some((e) => e.type === 'directory' && e.name.toLowerCase() === inboxDir)) {
+    const inbox = entries.find((e) => e.type === 'directory' && e.name.toLowerCase() === inboxDir)
+    if (inbox && (await this.fs.readdir(inbox.name)).some((e) => !e.name.startsWith('.'))) {
       return 'inbox'
     }
+    return this.rootHoldsLooseContent(entries, systemFolderPaths) ? 'root' : 'inbox'
+  }
+
+  /** Markdown or a folder at the root that only root mode would show. */
+  private rootHoldsLooseContent(
+    entries: FileInfo[],
+    systemFolderPaths?: SystemFolderPaths | null
+  ): boolean {
     // Remapped system folders are system directories, not loose user content:
     // without this, a vault whose inbox is `01 - Entry` reads as a flat
     // root-mode vault.
@@ -301,14 +315,13 @@ export class MobileVault {
         if (value) customDirs.add(value.toLowerCase())
       }
     }
-    for (const e of entries) {
-      if (e.name.startsWith('.')) continue
-      if (RESERVED_ROOT_NAMES.has(e.name)) continue
-      if (customDirs.has(e.name.toLowerCase())) continue
-      if (e.type === 'directory') return 'root'
-      if (isMarkdownPath(e.name)) return 'root'
-    }
-    return 'inbox'
+    return entries.some(
+      (e) =>
+        !e.name.startsWith('.') &&
+        !RESERVED_ROOT_NAMES.has(e.name) &&
+        !customDirs.has(e.name.toLowerCase()) &&
+        (e.type === 'directory' || isMarkdownPath(e.name))
+    )
   }
 
   async getVaultSettings(): Promise<VaultSettings> {
@@ -413,7 +426,9 @@ export class MobileVault {
   async rootContentHiddenByInboxMode(): Promise<boolean> {
     const settings = await this.getVaultSettings()
     if (settings.primaryNotesLocation !== 'inbox') return false
-    return (await this.inferPrimaryNotesLocation(settings.systemFolderPaths)) === 'root'
+    // Not the inference: it trusts an inbox with notes in it, and this banner
+    // is the only thing that says notes beside that inbox are out of view.
+    return this.rootHoldsLooseContent(await this.fs.readdir(''), settings.systemFolderPaths)
   }
 
   /** The folder a vault-relative path belongs to, remap-aware. Settings are

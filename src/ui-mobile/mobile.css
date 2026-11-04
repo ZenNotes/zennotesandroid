@@ -1007,6 +1007,33 @@
   font-weight: 500;
 }
 
+.zn-phone .zn-mobile-drawer-notice {
+  margin: 0.5rem 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.625rem;
+  background: rgb(var(--z-accent) / 0.1);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  color: rgb(var(--z-fg-1));
+}
+
+.zn-phone .zn-mobile-drawer-notice-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.375rem;
+}
+
+.zn-phone .zn-mobile-drawer-notice-actions button {
+  min-height: 2.75rem;
+  font-weight: 600;
+  color: rgb(var(--z-accent));
+}
+
+.zn-phone .zn-mobile-drawer-notice-actions button + button {
+  font-weight: 400;
+  color: rgb(var(--z-grey-1));
+}
+
 .zn-phone .zn-mobile-drawer-empty {
   padding: 1rem 0.75rem;
   font-size: 0.9375rem;

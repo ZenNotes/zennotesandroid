@@ -17,6 +17,7 @@ import { useWorkspaceSnapshot, openLocalVault, pickLocalVault, refreshRemoteProf
 import { openNote, openAppPage } from '@zennotes/app-core/navigation'
 import { showSearch } from '@zennotes/app-core/commands'
 import { setSettingsVisible } from '@zennotes/app-core/settings'
+import { dismissRootNotice, rootNoticeDismissed, showRootNotes } from './drawer-root-notice'
 import { confirm as confirmApp, prompt as promptApp } from '@zennotes/app-core/dialogs'
 import { captureMobileWorkspace, reportActionError } from './workspace-context'
 import { Keyboard } from '@capacitor/keyboard'
@@ -882,6 +883,54 @@ function useLongPress(): (fn: () => void) => {
   })
 }
 
+/** Notes beside the inbox are out of view in inbox mode: say so, and offer the
+ *  way to show them. It asks the vault each time the drawer opens. */
+function HiddenRootNotesNotice({ vaultRoot }: { vaultRoot: string | null }): React.JSX.Element | null {
+  const [hidden, setHidden] = useState(false)
+  useEffect(() => {
+    let live = true
+    if (!vaultRoot || rootNoticeDismissed(vaultRoot)) {
+      setHidden(false)
+      return
+    }
+    void window.zen
+      .rootContentHiddenByInboxMode()
+      .then((answer) => {
+        if (live) setHidden(answer)
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [vaultRoot])
+  if (!hidden || !vaultRoot) return null
+  return (
+    <div className="zn-mobile-drawer-notice" role="status">
+      <p>Some notes aren’t shown. Notes and folders at this vault’s top level are hidden.</p>
+      <div className="zn-mobile-drawer-notice-actions">
+        <button
+          type="button"
+          onClick={() => {
+            setHidden(false)
+            void showRootNotes(window.zen).catch(() => setHidden(true))
+          }}
+        >
+          Show them
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setHidden(false)
+            dismissRootNotice(vaultRoot)
+          }}
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function MobileDrawerBody(props: {
   vaultName: string
   vaultRoot: string | null
@@ -1088,6 +1137,8 @@ function MobileDrawerBody(props: {
           <Icon d={D.search} />
           Search notes
         </button>
+
+        <HiddenRootNotesNotice vaultRoot={props.vaultRoot} />
 
         <div className="zn-mobile-drawer-scroll" ref={scrollRef}>
           {(pull > 0 || refreshing) && (

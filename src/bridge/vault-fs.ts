@@ -47,11 +47,11 @@ import { pastedImageFilename } from '@zennotes/shared-domain/pasted-image'
 import { DEMO_TOUR_ASSETS, DEMO_TOUR_NOTES } from '@zennotes/shared-domain/demo-tour-data'
 import { currentDemoTourPath, DEMO_TOUR_DIR, demoTourNestedDirs } from '@zennotes/shared-domain/demo-tour'
 import {
-  DESKTOP_WELCOME_NOTE_NAME,
-  isUntouchedDesktopWelcome,
-  sha256OfText,
   WELCOME_NOTE_PATH,
-  WELCOME_NOTE_BODY
+  WELCOME_NOTE_BODY,
+  isUntouchedInboxWelcome,
+  isWelcomeSeedName,
+  sha256OfText
 } from './welcome-note'
 import {
   rewriteWikilinksForRename,
@@ -236,6 +236,7 @@ export class MobileVault {
       await ensureDownloaded(this.fs.rootUri, 20000)
     }
     await this.ensureVaultLayout()
+    await this.settleSeededInbox()
     await this.loadMetaCache()
     await this.sweepWriteArtifacts()
   }
@@ -293,7 +294,6 @@ export class MobileVault {
     for (const f of folders) {
       await this.fs.mkdir(resolveFolderPath(f, settings.systemFolderPaths))
     }
-    await this.settleSeededInbox()
   }
 
   private async inferPrimaryNotesLocation(
@@ -309,17 +309,55 @@ export class MobileVault {
     // folder opened before its notes arrived (Syncthing still copying, a vault
     // moved over in parts) read as inbox mode for good and showed none of them
     // (#1023). With nothing inside, reading the root instead cannot hide a note.
-    const inboxDir = resolveFolderPath('inbox', systemFolderPaths).toLowerCase()
     //
-    // Nor does one holding only the Welcome a desktop seeded, untouched: a vault
-    // made on a desktop and filled from elsewhere (folders copied in, a sync tool)
-    // would otherwise read as inbox mode and hide everything that came.
+    // Nor does one holding only the Welcome this app seeded there, untouched: the
+    // folder copied in beside it is the vault (ZenNotes 4e8c13f8, settleSeededInbox).
+    const inboxDir = resolveFolderPath('inbox', systemFolderPaths).toLowerCase()
     const inbox = entries.find((e) => e.type === 'directory' && e.name.toLowerCase() === inboxDir)
     if (inbox) {
       const inside = (await this.fs.readdir(inbox.name)).filter((e) => !e.name.startsWith('.'))
-      if (inside.length > 0 && !(await this.holdsOnlyUntouchedWelcome(inbox.name, inside))) return 'inbox'
+      const onlySeed = inside.length === 1 && (await this.isUntouchedSeedAt(inbox.name, inside[0]!))
+      if (inside.length > 0 && !onlySeed) return 'inbox'
     }
     return this.rootHoldsLooseContent(entries, systemFolderPaths) ? 'root' : 'inbox'
+  }
+
+  /** A Welcome in `dir` that nobody wrote in or commented on. */
+  private async isUntouchedSeedAt(dir: string, entry: FileInfo): Promise<boolean> {
+    if (entry.type !== 'file' || !isWelcomeSeedName(entry.name)) return false
+    const rel = `${dir}/${entry.name}`
+    const text = await this.fs.readTextOrNull(rel)
+    if (text === null || !isUntouchedInboxWelcome(entry.name, await sha256OfText(text))) return false
+    return (await this.fs.statVerified(this.commentsPathFor(rel))) === null
+  }
+
+  /**
+   * A folder opened empty is seeded in inbox mode without saying so in vault.json,
+   * so its layout is still inferred when folders are copied in, and that turns to
+   * root mode. What it must not leave behind is the system inbox as a lowercase
+   * `inbox` folder holding a Welcome nobody asked for. The desktop's
+   * settleSeededInbox (ZenNotes 4e8c13f8) does the same for its own seed.
+   *
+   * A vault.json that states inbox mode, or that states nothing but exists (this
+   * app reads that as inbox mode), keeps its inbox however much is at the root:
+   * that is what the banner is for. One that does not parse is not ours to act on.
+   */
+  async settleSeededInbox(): Promise<boolean> {
+    const raw = await this.fs.readTextOrNull(`${INTERNAL_VAULT_DIR}/vault.json`)
+    let parsed: { primaryNotesLocation?: unknown; systemFolderPaths?: unknown } | null = null
+    if (raw !== null) {
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        return false
+      }
+      if (parsed?.primaryNotesLocation !== 'root') return false
+    }
+    const paths = normalizeSystemFolderPaths(parsed?.systemFolderPaths)
+    if ((await this.inferPrimaryNotesLocation(paths)) !== 'root') return false
+    const removed = await this.removeSeedOnlyInbox(paths, { explicit: false })
+    if (removed) this.settingsCache = null
+    return removed
   }
 
   /** Markdown or a folder at the root that only root mode would show. */
@@ -447,54 +485,18 @@ export class MobileVault {
     return normalized
   }
 
-  /** Whether `entries` (an inbox's, dotfiles left out) are only a Welcome a
-   *  desktop seeded, as it wrote it. */
-  private async holdsOnlyUntouchedWelcome(inboxRel: string, entries: FileInfo[]): Promise<boolean> {
-    const [only] = entries
-    if (entries.length !== 1 || !only || only.type !== 'file' || only.name !== DESKTOP_WELCOME_NOTE_NAME) return false
-    try {
-      return isUntouchedDesktopWelcome(await sha256OfText(await this.fs.readText(`${inboxRel}/${only.name}`)))
-    } catch {
-      return false
-    }
-  }
-
   /**
-   * A folder opened empty, or a desktop vault seeded empty, does not say its layout
-   * in vault.json, so the layout is still inferred when notes arrive, and turns to
-   * root mode. That is right, it shows what came. What it must not leave behind is
-   * the system Inbox as a lowercase `inbox` folder holding a Welcome nobody asked
-   * for. The desktop's settleSeededInbox (4e8c13f8); runs on open and on a rescan.
-   */
-  async settleSeededInbox(): Promise<boolean> {
-    let parsed: unknown = null
-    try {
-      const raw = await this.fs.readTextOrNull(`${INTERNAL_VAULT_DIR}/vault.json`)
-      if (raw !== null) parsed = JSON.parse(raw)
-    } catch {
-      // A vault.json that does not parse states nothing to act on.
-      return false
-    }
-    const primary = (parsed as { primaryNotesLocation?: unknown } | null)?.primaryNotesLocation
-    // One that says inbox keeps it, however much is at its root: that is what the
-    // notice is for.
-    if (primary != null && primary !== 'root') return false
-    const paths = (parsed as { systemFolderPaths?: SystemFolderPaths } | null)?.systemFolderPaths ?? null
-    return await this.removeSeedOnlyInbox(paths, { explicit: false })
-  }
-
-  /**
-   * Takes away `inbox/` when it only holds what was put there for the reader, so it
-   * does not sit among the notes as a plain folder in a vault that keeps them at its
-   * root. Anything else in it stays where it is, a Welcome you edited or commented
-   * on included. A folder the inbox was remapped to is theirs by name, and so is
-   * `Inbox/`.
+   * Takes away `inbox/` when it only holds what an app put there, so it does not
+   * sit among the notes as a plain folder in a vault that keeps them at its root.
+   * Anything else in it stays, a Welcome someone edited or commented on included.
+   * A folder the inbox was remapped to is theirs by name, and so is `Inbox/`.
    *
-   * An empty folder goes only when someone asked, by switching to root mode: without
-   * a Welcome there is no sign this app made it, and it can be a capture tool's. The
-   * Welcome goes only beside something else to look at, or a vault switched to root
-   * before anything is in it would open on nothing. Non-recursive at the end, so a
-   * file landing after the look stays, and the folder with it.
+   * An empty inbox goes only when someone asked, by switching to root mode: with
+   * no Welcome there is no sign this app made it. The Welcome goes only beside
+   * something else to look at, since a vault switched to root mode before anything
+   * is in it would otherwise open on nothing. Finder's .DS_Store says nothing
+   * about the folder. The rmdir is not recursive, so a file landing after the
+   * look stays, and so does the folder.
    */
   private async removeSeedOnlyInbox(
     systemFolderPaths: SystemFolderPaths | null | undefined,
@@ -504,24 +506,22 @@ export class MobileVault {
     try {
       const top = await this.fs.readdir('')
       if (!top.some((entry) => entry.name === 'inbox' && entry.type === 'directory')) return false
-      // Finder writes this into any folder it shows; it says nothing about the folder.
       const inside = (await this.fs.readdir('inbox')).filter((entry) => entry.name !== '.DS_Store')
       if (inside.length > 1) return false
       const [only] = inside
       if (!only && !explicit) return false
       if (only) {
-        const welcome = `inbox/${DESKTOP_WELCOME_NOTE_NAME}`
-        if (only.name !== DESKTOP_WELCOME_NOTE_NAME || only.type !== 'file') return false
-        if (!this.rootHoldsLooseContent(top, systemFolderPaths)) return false
-        if ((await this.fs.statOrNull(this.commentsPathFor(welcome))) !== null) return false
-        if (!(await this.takeAwayUntouchedWelcome(welcome))) return false
-        await this.fs.deleteFile(this.metadataPathFor(welcome)).catch(() => {})
-        this.invalidateMeta(welcome)
+        if (!(await this.isUntouchedSeedAt('inbox', only))) return false
+        if ((await this.inferPrimaryNotesLocation(systemFolderPaths)) !== 'root') return false
+        if (!(await this.takeAwayUntouchedWelcome(only.name))) return false
+        const rel = `inbox/${only.name}`
+        const metadata = this.metadataPathFor(rel)
+        if ((await this.fs.statVerified(metadata)) === 'file') await this.fs.deleteFile(metadata)
+        this.invalidateMeta(rel)
+        emitVaultChange({ kind: 'unlink', path: rel, folder: 'inbox', scope: 'content' })
       }
-      await this.fs.deleteFile('inbox/.DS_Store').catch(() => {})
+      if ((await this.fs.statVerified('inbox/.DS_Store')) === 'file') await this.fs.deleteFile('inbox/.DS_Store')
       await this.fs.rmdirIfEmpty('inbox')
-      // Every caller lists the vault right after (open, a rescan's resync, a
-      // settings change), so the folder leaves the lists with no event of its own.
       return true
     } catch {
       // Already gone, or something arrived: the folder simply stays as it is.
@@ -530,20 +530,21 @@ export class MobileVault {
   }
 
   /**
-   * Deletes the Welcome if it is still a seed. It is hashed where nothing can save to
-   * it any more: an edit landing between a hash and a delete would be lost. A save
-   * after the rename makes a new file, which keeps the folder. An edit the rename
-   * carried with it goes back, beside any newer file rather than over it.
+   * Deletes the Welcome if it is still a seed. It is hashed again where nothing can
+   * save to it any more, since an edit landing between a hash and a delete would be
+   * lost. A save after the rename makes a new file, which keeps the folder. An edit
+   * the rename carried with it goes back, beside any newer file rather than over it.
    */
-  private async takeAwayUntouchedWelcome(welcome: string): Promise<boolean> {
-    if (!isUntouchedDesktopWelcome(await sha256OfText(await this.fs.readText(welcome)))) return false
+  private async takeAwayUntouchedWelcome(name: string): Promise<boolean> {
+    const welcome = `inbox/${name}`
     const aside = `inbox/.Welcome.settling-${uuid()}`
     await this.fs.rename(welcome, aside)
-    if (isUntouchedDesktopWelcome(await sha256OfText(await this.fs.readText(aside)))) {
+    const text = await this.fs.readTextOrNull(aside)
+    if (text !== null && isUntouchedInboxWelcome(name, await sha256OfText(text))) {
       await this.fs.deleteFile(aside)
       return true
     }
-    const taken = (await this.fs.statOrNull(welcome)) !== null
+    const taken = (await this.fs.statVerified(welcome)) !== null
     await this.fs.rename(aside, taken ? `inbox/Welcome ${uuid()}.md` : welcome)
     return false
   }
@@ -1837,6 +1838,7 @@ export class MobileVault {
     // Vault settings may have changed externally (desktop edit synced via
     // iCloud) — drop the cache so the next read sees the file.
     this.settingsCache = null
+    // Folders copied in while the app was away can leave a seeded inbox behind.
     await this.settleSeededInbox()
     const before = new Map<string, CachedMeta>(this.metaCache)
     const notes = await this.listNotes()

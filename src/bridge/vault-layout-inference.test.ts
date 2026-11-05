@@ -118,6 +118,7 @@ function memoryVault(entries: Record<string, string | null | undefined>) {
     writeText: async (path: string, body: string) => { addParents(path); files.set(path, body) },
     mkdir: async (dir: string) => { made.push(dir); addParents(`${dir}/x`); dirs.add(dir) },
     statOrNull: async (path: string) => (files.has(path) ? { type: 'file' } : dirs.has(path) ? { type: 'directory' } : null),
+    statVerified: async (path: string) => (files.has(path) ? 'file' : dirs.has(path) ? 'directory' : null),
     rename: async (from: string, to: string) => {
       const body = files.get(from)
       if (body === undefined) throw new Error(`missing ${from}`)
@@ -144,9 +145,9 @@ const toRoot = async (vault: InstanceType<typeof MobileVault>) =>
   vault.setVaultSettings({ ...(await vault.getVaultSettings()), primaryNotesLocation: 'root' })
 
 test('the fixture is the Welcome desktop seeds today, which the list must hold', async () => {
-  const { isUntouchedDesktopWelcome, sha256OfText } = await loadMobileModule(['./src/bridge/welcome-note'])
-  assert.equal(isUntouchedDesktopWelcome(await sha256OfText(DESKTOP_WELCOME)), true)
-  assert.equal(isUntouchedDesktopWelcome(await sha256OfText(`${DESKTOP_WELCOME}x`)), false)
+  const { isUntouchedInboxWelcome, sha256OfText } = await loadMobileModule(['./src/bridge/welcome-note'])
+  assert.equal(isUntouchedInboxWelcome('Welcome.md', await sha256OfText(DESKTOP_WELCOME)), true)
+  assert.equal(isUntouchedInboxWelcome('Welcome.md', await sha256OfText(`${DESKTOP_WELCOME}x`)), false)
 })
 
 test('a folder that states no layout gets no inbox on open', async () => {
@@ -167,13 +168,13 @@ test('an inbox holding only an untouched desktop Welcome reads as empty for the 
   assert.equal(await layout(memoryVault({ 'inbox/Welcome.md': DESKTOP_WELCOME, 'inbox/Mine.md': '# Mine\n', 'Trips/Rome.md': '# Rome\n' }).vault), 'inbox')
 })
 
-test('opening takes away the system inbox holding only an untouched Welcome, beside other notes', async () => {
+test("a desktop's untouched Welcome goes, with its creation date, beside other notes", async () => {
   const { vault, files, dirs } = memoryVault({
     'inbox/Welcome.md': DESKTOP_WELCOME,
     '.zennotes/note-metadata/inbox/Welcome.md.metadata.json': '{}',
     'Trips/Rome.md': '# Rome\n'
   })
-  await vault.ensureVaultLayout()
+  assert.equal(await vault.settleSeededInbox(), true)
   assert.equal(dirs.has('inbox'), false)
   assert.equal(files.has('.zennotes/note-metadata/inbox/Welcome.md.metadata.json'), false)
   assert.equal(files.get('Trips/Rome.md'), '# Rome\n')
@@ -181,7 +182,7 @@ test('opening takes away the system inbox holding only an untouched Welcome, bes
 
 test('a rescan settles a vault that filled up after it opened', async () => {
   const { vault, files, dirs } = memoryVault({ 'inbox/Welcome.md': DESKTOP_WELCOME })
-  await vault.ensureVaultLayout()
+  assert.equal(await vault.settleSeededInbox(), false)
   assert.equal(dirs.has('inbox'), true, 'alone, the Welcome stays')
   files.set('Loose.md', '# Loose\n')
   Object.assign(vault, { listNotes: async () => [] })

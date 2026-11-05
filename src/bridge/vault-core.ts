@@ -256,13 +256,15 @@ export function extractTags(body: string): string[] {
 export function extractWikilinks(body: string): string[] {
   if (!body.includes('[[')) return []
   const stripped = stripCodeContent(body)
-  const re = /(!?)\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]/g
+  // A table writes the alias separator as `\|`, the escape GFM needs to keep the
+  // pipe in its cell: the backslash belongs to the separator, not the target.
+  const re = /(!?)\[\[([^\]|]+?)(?:\\?\|[^\]]+)?\]\]/g
   const seen = new Set<string>()
   let m: RegExpExecArray | null
   while ((m = re.exec(stripped)) !== null) {
     const bang = m[1] ?? ''
     const target = (m[2] ?? '').trim()
-    if (!target) continue
+    if (!target || target === '\\') continue
     if (bang === '!' && localAssetTargetKind(target)) continue
     seen.add(target)
   }
@@ -273,7 +275,7 @@ export function extractAssetEmbeds(body: string): string[] {
   const stripped = stripCodeContent(body)
   const seen = new Set<string>()
   if (stripped.includes('![[')) {
-    const re = /!\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]/g
+    const re = /!\[\[([^\]|]+?)(?:\\?\|[^\]]+)?\]\]/g
     let m: RegExpExecArray | null
     while ((m = re.exec(stripped)) !== null) {
       const t = (m[1] ?? '').trim()
@@ -300,7 +302,7 @@ export function bodyHasLocalAsset(body: string): boolean {
   if (!body.includes('](') && !body.includes('![[')) return false
   const stripped = stripCodeContent(body)
   const linkRe = /(!?)\[[^\]]*\]\((<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\)/g
-  const embedRe = /!\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]/g
+  const embedRe = /!\[\[([^\]|]+?)(?:\\?\|[^\]]+)?\]\]/g
   let m: RegExpExecArray | null
   while ((m = linkRe.exec(stripped)) !== null) {
     let href = (m[2] ?? '').trim()

@@ -48,6 +48,14 @@ describe('FocusHealGate', () => {
     assert.equal(gate.returned(phone), true)
   })
 
+  it('lets a tap into the note through, which also reads as the window returning', () => {
+    const gate = new FocusHealGate()
+    gate.left(false) // Keyboard.hide() resigned the WebView, the editor already blurred
+    assert.equal(gate.returned({ ...phone, tappedNote: true }), false)
+    gate.left(false)
+    assert.equal(gate.returned({ ...phone, tappedNote: false }), true) // a tap elsewhere still holds
+  })
+
   it('counts a fresh page (a cold launch, the Layout reload) as reading', () => {
     assert.equal(new FocusHealGate().returned(phone), true)
   })

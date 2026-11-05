@@ -773,6 +773,13 @@
   min-height: 44px;
 }
 
+/* The footer rides up with the keyboard, into the spot the toolbar's chevron
+   is about to draw on, so a tap meant for the chevron opened the browser
+   sign-in. It answers again once the keyboard is down. */
+.zn-mobile.zn-phone.zn-kb-open [data-cloud-sync-action] {
+  pointer-events: none;
+}
+
 /* Split view has no meaning on a phone. */
 .zn-mobile.zn-phone button[aria-label^='Split mode'] {
   display: none;
@@ -1005,6 +1012,33 @@
   width: 100%;
   color: rgb(var(--z-accent));
   font-weight: 500;
+}
+
+.zn-phone .zn-mobile-drawer-notice {
+  margin: 0.5rem 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.625rem;
+  background: rgb(var(--z-accent) / 0.1);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  color: rgb(var(--z-fg-1));
+}
+
+.zn-phone .zn-mobile-drawer-notice-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.375rem;
+}
+
+.zn-phone .zn-mobile-drawer-notice-actions button {
+  min-height: 2.75rem;
+  font-weight: 600;
+  color: rgb(var(--z-accent));
+}
+
+.zn-phone .zn-mobile-drawer-notice-actions button + button {
+  font-weight: 400;
+  color: rgb(var(--z-grey-1));
 }
 
 .zn-phone .zn-mobile-drawer-empty {

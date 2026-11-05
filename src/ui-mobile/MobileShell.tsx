@@ -1500,10 +1500,10 @@ function usePinchFontSize(): void {
  */
 /**
  * Desktop-only commands that app-core registers without a runtime gate. None
- * of these can work on iOS (App Store owns updates; no app zoom, floating
- * windows, or PDF export pipeline) — hide their palette rows on any device
- * width. Matched by title prefix against each row's text. A hidden row never
- * takes the highlight or Return (palette-hidden-rows.ts).
+ * of these can work on Android (Play owns updates; no app zoom, floating
+ * windows, or PDF export pipeline), so their palette rows hide on any device
+ * width. Matched by inclusion in each row's text. A hidden row never takes the
+ * highlight or Return (palette-hidden-rows.ts).
  */
 const DESKTOP_ONLY_COMMAND_TITLES = [
   'Open Help',
@@ -1525,12 +1525,20 @@ const DESKTOP_ONLY_COMMAND_TITLES = [
   // Unsplash bridge methods, which this shell leaves out (no Unsplash tab on
   // Android). Named for the same reason as the two above.
   'Add Cover from Unsplash',
-  'Set Unsplash Access Key'
+  'Set Unsplash Access Key',
+  // PDF Embeds picks between a compact card and an inline viewer, and Android's
+  // WebView has no PDF viewer to pick, on a phone or a tablet.
+  'PDF Embeds: Inline Viewer',
+  'PDF Embeds: Compact Card'
 ]
 
-/** Additionally hidden on phones: splits/panes and the (replaced) sidebar
- *  exist on iPad but not in the phone layout. */
-const PHONE_ONLY_HIDDEN_COMMAND_TITLES = [
+/** Additionally hidden in the phone LAYOUT: splits/panes, tabs and the
+ *  (replaced) sidebar exist in the desktop-like layout but not in the phone
+ *  one, and Focus Editor is a keyboard move with nothing to do on a touch
+ *  screen. Both titles of a toggling command are named: which one shows
+ *  depends on its state. Auto-Reveal scrolls a sidebar the phone does not
+ *  have. */
+const PHONE_LAYOUT_HIDDEN_COMMAND_TITLES = [
   'Split Right',
   'Split Down',
   'Switch to Split Mode',
@@ -1548,6 +1556,21 @@ const PHONE_ONLY_HIDDEN_COMMAND_TITLES = [
   // task opens its note behind the sheet with the keyboard raised, and the
   // sheet stays up until Done. A tablet in the desktop layout keeps it.
   'Toggle Timeline',
+  'Close Tab',
+  'Next Tab',
+  'Previous Tab',
+  'Pin Tab',
+  'Unpin Tab',
+  'Close Other Tabs in Pane',
+  'Close Tabs to the Right',
+  'Open Active Tab Menu',
+  'Disable Tabs',
+  'Enable Tabs',
+  'Light Sidebar',
+  'Dark Sidebar',
+  'Focus Editor',
+  'Enable Auto-Reveal Active Note',
+  'Disable Auto-Reveal Active Note',
   // Drawings are view-only on phones — creating one opens an uneditable
   // canvas. ('New Drawing' also catches 'Embed New Drawing' via the
   // .includes row match; 'Embed Existing Drawing…' stays, embeds render.)
@@ -1559,12 +1582,14 @@ function useDesktopCommandCleanup(): void {
   useEffect(() => {
     let raf = 0
     const titles = isPhoneWidth()
-      ? [...DESKTOP_ONLY_COMMAND_TITLES, ...PHONE_ONLY_HIDDEN_COMMAND_TITLES]
+      ? [...DESKTOP_ONLY_COMMAND_TITLES, ...PHONE_LAYOUT_HIDDEN_COMMAND_TITLES]
       : DESKTOP_ONLY_COMMAND_TITLES
     const sweep = (): void => {
       const palette = document.querySelector('.z-palette')
       if (!palette) return
-      for (const row of palette.querySelectorAll<HTMLElement>('button')) {
+      // Only the command palette's rows. Every palette shares .z-palette, so
+      // these short titles would hide a note named "Next Tab" from Search.
+      for (const row of palette.querySelectorAll<HTMLElement>('button[data-cmd-idx]')) {
         // Row text is "<CATEGORY><Title><shortcut>", so match by inclusion.
         const text = row.textContent ?? ''
         if (titles.some((t) => text.includes(t))) {

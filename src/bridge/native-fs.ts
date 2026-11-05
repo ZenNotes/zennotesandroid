@@ -96,6 +96,7 @@ const SafFs = registerPlugin<{
   rename(o: { root: string; from: string; to: string }): Promise<void>
   copy(o: { root: string; from: string; to: string }): Promise<void>
   delete(o: { root: string; path: string }): Promise<void>
+  rmdirIfEmpty(o: { root: string; path: string }): Promise<void>
 }>('SafFs')
 
 export interface CloudFileFingerprint {
@@ -605,6 +606,17 @@ export class NativeFs {
         return
       }
       await Filesystem.rmdir({ ...this.loc(relPath), recursive: true })
+    })
+  }
+
+  /** Fails on a folder holding anything, where rmdir takes it all. */
+  async rmdirIfEmpty(relPath: string): Promise<void> {
+    await this.changing(async () => {
+      if (this.saf) {
+        await SafFs.rmdirIfEmpty({ root: this.cloudRootUri!, path: relPath })
+        return
+      }
+      await Filesystem.rmdir({ ...this.loc(relPath), recursive: false })
     })
   }
 

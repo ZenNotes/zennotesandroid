@@ -543,7 +543,6 @@ public class SafFsPlugin extends Plugin {
             }
             return;
         }
-        byte[] bytes = readAll(docUri(tree, src.docId));
         Entry existing = resolve(tree, to);
         Uri target;
         if (existing != null && !existing.isDir) {
@@ -557,9 +556,15 @@ public class SafFsPlugin extends Plugin {
             if (created == null) throw new Exception("Could not create: " + to);
             target = created;
         }
-        try (OutputStream out = resolver().openOutputStream(target, "rwt")) {
+        // Streamed: holding a large attachment in memory to copy it ran the
+        // heap out and took the app down (118 MB on a 192 MB heap, #1023).
+        try (InputStream in = resolver().openInputStream(docUri(tree, src.docId));
+             OutputStream out = resolver().openOutputStream(target, "rwt")) {
+            if (in == null) throw new FileNotFoundException(from);
             if (out == null) throw new Exception("Could not open for writing: " + to);
-            out.write(bytes);
+            byte[] chunk = new byte[65536];
+            int n;
+            while ((n = in.read(chunk)) != -1) out.write(chunk, 0, n);
         }
         invalidateParent(tree, to);
     }
@@ -580,6 +585,31 @@ public class SafFsPlugin extends Plugin {
             call.resolve();
         } catch (Exception e) {
             call.reject("delete failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * deleteDocument takes a directory with everything in it, so a folder that
+     * must only go while empty is listed fresh, past the cache, first.
+     */
+    @PluginMethod
+    public void rmdirIfEmpty(PluginCall call) {
+        Uri tree = requireTree(call);
+        if (tree == null) return;
+        try {
+            String rel = clean(call.getString("path"));
+            Entry e = resolve(tree, rel);
+            if (e == null) throw new FileNotFoundException(rel);
+            if (!e.isDir) throw new Exception("Not a folder");
+            if (!listChildren(tree, e.docId).isEmpty()) throw new Exception("Folder is not empty");
+            if (!DocumentsContract.deleteDocument(resolver(), docUri(tree, e.docId))) {
+                throw new Exception("Delete refused");
+            }
+            invalidateParent(tree, rel);
+            listings.remove(cacheKey(tree, e.docId));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("rmdirIfEmpty failed: " + e.getMessage());
         }
     }
 

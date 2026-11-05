@@ -7,6 +7,7 @@
 import { requestCloudAutoSync } from '@zennotes/app-core/main'
 import { activeVault, importPendingShares } from '../bridge/mobile-bridge'
 import { ensureDownloaded } from '../bridge/icloud'
+import { noteVaultRefreshed } from './drawer-root-notice'
 
 export async function refreshVault(): Promise<void> {
   try {
@@ -21,6 +22,7 @@ export async function refreshVault(): Promise<void> {
   } catch {
     // no vault open yet
   }
+  noteVaultRefreshed()
   // 'foreground' is an immediate-reason for the auto-sync engine — right for
   // both the app-foreground path and an explicit pull-to-refresh.
   requestCloudAutoSync('foreground')

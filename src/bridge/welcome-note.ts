@@ -37,6 +37,36 @@ export function isUntouchedWelcomeSeed(path: string, sha256: string): boolean {
   return (path === WELCOME_NOTE_PATH || path === WELCOME_NOTE_ROOT_PATH) && WELCOME_NOTE_SEED_SHA256.has(sha256)
 }
 
+/**
+ * SHA-256 of every `inbox/Welcome.md` the desktop app has seeded, copied from
+ * WELCOME_SEED_SHA256 in its apps/desktop/src/main/vault.ts (ZenNotes 4e8c13f8).
+ * A desktop vault can reach this app through iCloud or a picked folder, and its
+ * Welcome is just as untouched. The two lists grow apart, never shrink.
+ */
+const DESKTOP_WELCOME_SEED_SHA256 = new Set([
+  '50c264c87b2790dbb685cd9a699118e1d62e84eb5532701e96d5b1ab55373fac',
+  'a5d1b711723c817947c48b844ddc789b9889ce13645a060f33e6e6c4362cf1af',
+  'f1d62f8864688c0c51d627c1156c8a00b0c3925eddf0678dfe3da84dd5e6a9e8',
+  '04fabc332abe4b892d548782ecfcec27b77cf157ec59c7f0663b5774fae01aa9'
+])
+
+/** The name a seeded Welcome has inside `inbox/`, this app's or the desktop's. */
+export function isWelcomeSeedName(name: string): boolean {
+  return name === 'Welcome to ZenNotes.md' || name === 'Welcome.md'
+}
+
+/** Whether `inbox/<name>` holding these bytes is a Welcome nobody wrote in. */
+export function isUntouchedInboxWelcome(name: string, sha256: string): boolean {
+  if (name === 'Welcome to ZenNotes.md') return WELCOME_NOTE_SEED_SHA256.has(sha256)
+  if (name === 'Welcome.md') return DESKTOP_WELCOME_SEED_SHA256.has(sha256)
+  return false
+}
+
+export async function sha256OfText(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 export const WELCOME_NOTE_BODY = `# Welcome to ZenNotes
 
 This is your first note. It is yours: edit it, add to it, or delete it once you have found your feet.

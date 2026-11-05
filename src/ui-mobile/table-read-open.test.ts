@@ -24,21 +24,24 @@ describe("the database Table's page glyph", () => {
   })
 })
 
-// A link in a Markdown table cell followed from mousedown, with the cell editable
-// under it, and opened its note with the keyboard up, where a link outside a table
-// opens it down.
+// A link in a Markdown table cell goes through wikilink-touch.ts like any other,
+// which follows it on release and leaves the keyboard down.
+const touch = readFileSync(new URL('./wikilink-touch.ts', import.meta.url), 'utf8')
 const tableWidget = readFileSync(
   new URL('../../node_modules/@zennotes/app-core/dist/lib/cm-table.js', import.meta.url),
   'utf8'
 )
 
 describe('a link in a Markdown table cell', () => {
-  it('arms the hold on the touch, after the release every touch does', () => {
-    assert.match(readOpen, /const TABLE_CELL_LINKS = '\.cm-table-cell a'/)
-    assert.match(readOpen, /hold\.release\(\)\n\s*if \(isPhoneViewport\(\) && event\.target instanceof Element && event\.target\.closest\(TABLE_CELL_LINKS\)\) hold\.arm\(\)/)
+  it('is one of the links the touch handler follows', () => {
+    assert.match(touch, /\.cm-table-cell\[data-rendered="true"\] a\.wikilink/)
+    assert.match(touch, /link\?\.dataset\.wikilink/)
   })
 
-  it("matches core's cell class", () => {
+  it("matches core's cell and the anchor it reads the target from", () => {
     assert.match(tableWidget, /\.className = 'cm-table-cell'/)
+    assert.match(tableWidget, /dataset\.rendered/)
+    assert.match(tableWidget, /anchor\.dataset\.wikilink/)
+    assert.match(tableWidget, /classList\.contains\('wikilink'\)/)
   })
 })

@@ -59,11 +59,6 @@ const READ_CARDS = '[data-kanban-task-id]'
  *  keyboard (the Android check of 2.81.0); a board card's Open as page
  *  already opens to read. */
 const READ_PAGE_BUTTONS = 'tr.group\\/row button[title^="Open page"]'
-/** A link in a Markdown table cell. Core follows it on mousedown, from inside a
- *  contenteditable, and focuses the note it opens: the keyboard came up over a
- *  note reached by tapping a link, where a link outside a table leaves it down
- *  (wikilink-touch.ts). So the touch itself arms the hold, before any of that. */
-const TABLE_CELL_LINKS = '.cm-table-cell a'
 
 function isEditor(el: Element): boolean {
   return el.closest('.cm-editor') !== null
@@ -124,7 +119,6 @@ export function installReadOpenGuard(): void {
       lastTouch = Date.now()
       touchedField = event.target instanceof Element ? event.target.closest(NO_AUTOFOCUS_FIELDS) : null
       hold.release()
-      if (isPhoneViewport() && event.target instanceof Element && event.target.closest(TABLE_CELL_LINKS)) hold.arm()
     },
     true
   )

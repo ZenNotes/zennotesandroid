@@ -773,6 +773,13 @@
   min-height: 44px;
 }
 
+/* The footer rides up with the keyboard, into the spot the toolbar's chevron
+   is about to draw on, so a tap meant for the chevron opened the browser
+   sign-in. It answers again once the keyboard is down. */
+.zn-mobile.zn-phone.zn-kb-open [data-cloud-sync-action] {
+  pointer-events: none;
+}
+
 /* Split view has no meaning on a phone. */
 .zn-mobile.zn-phone button[aria-label^='Split mode'] {
   display: none;

@@ -21,6 +21,10 @@ test('Cloud footer reserves a touch-sized row below the phone floating navigatio
   }
 })
 
+test('the Cloud footer takes no tap while the keyboard is up, where the toolbar draws', () => {
+  assert.equal(declaration('.zn-mobile.zn-phone.zn-kb-open [data-cloud-sync-action]', 'pointer-events'), 'none')
+})
+
 /** Like `declaration`, but finds a selector inside a comma-grouped rule. */
 function groupedDeclaration(selector: string, property: string): string | undefined {
   let result: string | undefined

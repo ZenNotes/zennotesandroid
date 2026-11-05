@@ -3,7 +3,9 @@
  * inbox (#1023). The desktop sidebar has this banner; the drawer did not, so a
  * vault that filled up after a first note just looked empty, with no word why.
  */
-const DISMISSED_PREFIX = 'zn:root-notes-notice-dismissed:'
+// Core's own key (store.ts, rootBannerDismissKey): one vault has one notice, so
+// dismissing it in the drawer or the desktop layout's sidebar settles both.
+const DISMISSED_PREFIX = 'zen.sidebar.rootBannerDismissed.'
 
 type KeyValueStore = Pick<Storage, 'getItem' | 'setItem'>
 

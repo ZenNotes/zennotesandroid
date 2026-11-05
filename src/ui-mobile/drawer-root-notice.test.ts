@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { dismissRootNotice, noteVaultRefreshed, onVaultRefreshed, rootNoticeDismissed, showRootNotes } from './drawer-root-notice.ts'
 
@@ -39,4 +40,15 @@ test('a rescan tells whoever is listening, until they stop', () => {
   stop()
   noteVaultRefreshed()
   assert.equal(heard, 2)
+})
+
+test('the drawer and the desktop layout share one dismissal for a vault', () => {
+  const store = memoryStore()
+  dismissRootNotice('/a', store)
+  assert.equal(store.getItem('zen.sidebar.rootBannerDismissed./a'), '1')
+  const set = memoryStore()
+  set.setItem('zen.sidebar.rootBannerDismissed./a', '1')
+  assert.equal(rootNoticeDismissed('/a', set), true)
+  const core = readFileSync(new URL('../../node_modules/@zennotes/app-core/dist/store.js', import.meta.url), 'utf8')
+  assert.ok(core.includes('zen.sidebar.rootBannerDismissed.'), 'core still names its key this way')
 })

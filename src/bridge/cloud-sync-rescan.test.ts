@@ -20,7 +20,8 @@ it('batches a foreground/cloud refresh into one resync without triggering local 
       { path: 'new.md', updatedAt: 2, size: 2, folder: 'inbox' }
     ],
     invalidateMeta: (path: string) => invalidated.push(path),
-    folderOf: async () => 'inbox'
+    folderOf: async () => 'inbox',
+    settleSeededInbox: async () => false
   }
   try {
     await MobileVault.prototype.rescan.call(vault)

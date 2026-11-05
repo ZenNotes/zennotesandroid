@@ -32,6 +32,29 @@ const WELCOME_NOTE_SEED_SHA256 = new Set([
   '47226807945dc6e94656b2ebfb5d4fb7fdadfa43540874c3078e4a1793888383'
 ])
 
+/**
+ * SHA-256 of every Welcome the desktop app has seeded as `inbox/Welcome.md`: its
+ * WELCOME_SEED_SHA256 (apps/desktop/src/main/vault.ts, ZenNotes/zennotes 4e8c13f8),
+ * kept identical. A vault made on a desktop and brought over by a sync tool carries
+ * one, and these bytes are what proves nobody wrote in it.
+ */
+export const DESKTOP_WELCOME_NOTE_NAME = 'Welcome.md'
+const DESKTOP_WELCOME_SEED_SHA256 = new Set([
+  '50c264c87b2790dbb685cd9a699118e1d62e84eb5532701e96d5b1ab55373fac',
+  'a5d1b711723c817947c48b844ddc789b9889ce13645a060f33e6e6c4362cf1af',
+  'f1d62f8864688c0c51d627c1156c8a00b0c3925eddf0678dfe3da84dd5e6a9e8',
+  '04fabc332abe4b892d548782ecfcec27b77cf157ec59c7f0663b5774fae01aa9'
+])
+
+export function isUntouchedDesktopWelcome(sha256: string): boolean {
+  return DESKTOP_WELCOME_SEED_SHA256.has(sha256)
+}
+
+export async function sha256OfText(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 /** Whether this file is still the seed exactly as the app wrote it. */
 export function isUntouchedWelcomeSeed(path: string, sha256: string): boolean {
   return (path === WELCOME_NOTE_PATH || path === WELCOME_NOTE_ROOT_PATH) && WELCOME_NOTE_SEED_SHA256.has(sha256)

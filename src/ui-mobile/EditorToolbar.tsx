@@ -11,6 +11,7 @@ import React, { useEffect, useState } from 'react'
 import { Keyboard } from '@capacitor/keyboard'
 import { runEditorCommand } from '@zennotes/app-core/editor'
 import { toolbarModeFor, type ToolbarMode } from './toolbar-mode'
+import { hardwareKeyboardConnected, nativeHardwareKeyboard, watchHardwareKeyboard } from '../bridge/hardware-keyboard'
 import { isPhoneViewport } from '../viewport'
 import { promptAttachFiles } from './attach'
 import { revealCaretAboveKeyboardSoon } from './editor-keyboard-scroll'
@@ -142,7 +143,7 @@ const BUTTONS: ToolButton[] = [
 
 function currentToolbarMode(): ToolbarMode {
   const active = document.activeElement
-  return toolbarModeFor(active instanceof HTMLElement ? active : null, isPhoneViewport())
+  return toolbarModeFor(active instanceof HTMLElement ? active : null, isPhoneViewport(), hardwareKeyboardConnected())
 }
 
 export function MobileEditorToolbar(): React.JSX.Element | null {
@@ -159,7 +160,9 @@ export function MobileEditorToolbar(): React.JSX.Element | null {
     const refresh = (): void => setMode(currentToolbarMode())
     document.addEventListener('focusin', refresh)
     document.addEventListener('focusout', refresh)
+    const stopWatching = watchHardwareKeyboard(nativeHardwareKeyboard, refresh)
     return () => {
+      stopWatching()
       void show.then((h) => h.remove()).catch(() => {})
       void hide.then((h) => h.remove()).catch(() => {})
       document.removeEventListener('focusin', refresh)

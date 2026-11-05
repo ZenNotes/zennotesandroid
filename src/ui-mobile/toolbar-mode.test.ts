@@ -23,6 +23,19 @@ describe('the toolbar above the keyboard', () => {
     assert.equal(toolbarModeFor(el([], [NOTE_TITLE_FIELD]), false), null)
   })
 
+  it('draws no row with a hardware keyboard attached, on a phone or a tablet', () => {
+    for (const phone of [true, false]) {
+      assert.equal(toolbarModeFor(el(['.cm-editor']), phone, true), null)
+      assert.equal(toolbarModeFor(el([], [NOTE_TITLE_FIELD]), phone, true), null)
+    }
+  })
+
+  it('changes nothing on a device with no keyboard', () => {
+    assert.equal(toolbarModeFor(el(['.cm-editor']), true, false), toolbarModeFor(el(['.cm-editor']), true))
+    assert.equal(toolbarModeFor(el(['.cm-editor']), false, false), 'format')
+    assert.equal(toolbarModeFor(el([], [NOTE_TITLE_FIELD]), true, false), 'dismiss')
+  })
+
   it('is off for any other field', () => {
     assert.equal(toolbarModeFor(el([]), true), null)
     assert.equal(toolbarModeFor(null, true), null)

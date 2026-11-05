@@ -7,7 +7,9 @@
  * usually sits landed on the note, which commits the name and takes the caret
  * into the text, and the keyboard stayed up. Formatting means nothing in that
  * field, so it gets the chevron alone. A tablet's keyboard has its own hide
- * key. Kept apart from the DOM so node --test covers it.
+ * key. With a hardware keyboard attached there is no row at all, on a phone or
+ * a tablet: it would only sit over the note. Kept apart from the DOM so
+ * node --test covers it.
  */
 export type ToolbarMode = 'format' | 'dismiss' | null
 
@@ -18,8 +20,12 @@ export interface FocusedElement {
 
 export const NOTE_TITLE_FIELD = '[data-note-title-input]'
 
-export function toolbarModeFor(active: FocusedElement | null, phone: boolean): ToolbarMode {
-  if (!active) return null
+export function toolbarModeFor(
+  active: FocusedElement | null,
+  phone: boolean,
+  hardwareKeyboard = false
+): ToolbarMode {
+  if (!active || hardwareKeyboard) return null
   // The search panel's field lives inside .cm-editor too: while the user types
   // a query, the format row would only cover the panel it belongs to.
   if (active.closest('.cm-editor') && !active.closest('.cm-panel')) return 'format'

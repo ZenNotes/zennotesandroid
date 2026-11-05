@@ -14,6 +14,12 @@
  * focus tries is refused like an open's; a touch releases it. Someone who was
  * typing gets the keyboard back from the heal, as before. A fresh page (a
  * cold launch, the Layout reload) left nothing, which counts as reading.
+ *
+ * The same window focus also arrives under a finger: Keyboard.hide() resigns
+ * the WebView, so the next tap makes it first responder again and the window
+ * "comes back" a moment after the pointerdown that released the hold. A tap
+ * into the note means the keyboard, so it does not arm. A tap anywhere else
+ * still does, or the heal would raise the keyboard over what was tapped.
  * Kept apart from the DOM so node --test covers it.
  */
 
@@ -42,6 +48,9 @@ export interface ReturnState {
   phone: boolean
   /** The editor holds the DOM focus now. */
   editorFocused: boolean
+  /** A finger just went down on the note: this return is that tap, not the app
+   *  coming back. */
+  tappedNote?: boolean
 }
 
 export class FocusHealGate {
@@ -62,6 +71,6 @@ export class FocusHealGate {
    *  keyboard down through core's heal. */
   returned(state: ReturnState): boolean {
     this.away = false
-    return state.phone && !state.editorFocused && !this.typingWhenLeft
+    return state.phone && !state.editorFocused && !state.tappedNote && !this.typingWhenLeft
   }
 }

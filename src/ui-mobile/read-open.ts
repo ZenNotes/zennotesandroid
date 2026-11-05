@@ -23,13 +23,15 @@
  */
 import { Keyboard } from '@capacitor/keyboard'
 import { isPhoneViewport } from '../viewport'
-import { KeyboardHold, READ_OPEN_WAIT_MS } from './keyboard-hold'
+import { KeyboardHold, READ_OPEN_SETTLE_MS, READ_OPEN_WAIT_MS } from './keyboard-hold'
 import { holdUntilSettled, type LandingEnd } from './landing-hold'
 import { FocusHealGate, pageEventOf } from './focus-heal'
 
 const hold = new KeyboardHold(() => Date.now())
 /** When the screen was last touched: a touch ends every hold. */
 let lastTouch = 0
+/** Whether that touch went down on the note. */
+let lastTouchInEditor = false
 
 /** Core's note rows that open their note on a tap. */
 const READ_ROWS =
@@ -117,6 +119,7 @@ export function installReadOpenGuard(): void {
     'pointerdown',
     (event) => {
       lastTouch = Date.now()
+      lastTouchInEditor = event.target instanceof Element && isEditor(event.target)
       touchedField = event.target instanceof Element ? event.target.closest(NO_AUTOFOCUS_FIELDS) : null
       hold.release()
     },
@@ -135,7 +138,14 @@ export function installReadOpenGuard(): void {
   const holdThroughHeal = (event: Event): void => {
     const kind = pageEventOf(event, window, document.visibilityState)
     if (kind === 'leave') gate.left(editorFocused())
-    else if (kind === 'return' && gate.returned({ phone: isPhoneViewport(), editorFocused: editorFocused() })) {
+    else if (
+      kind === 'return' &&
+      gate.returned({
+        phone: isPhoneViewport(),
+        editorFocused: editorFocused(),
+        tappedNote: lastTouchInEditor && Date.now() - lastTouch < READ_OPEN_SETTLE_MS
+      })
+    ) {
       hold.arm()
       hold.opened()
     }

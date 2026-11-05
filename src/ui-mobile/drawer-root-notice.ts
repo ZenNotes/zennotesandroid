@@ -1,0 +1,53 @@
+/**
+ * Whether the drawer warns that an inbox-mode vault is hiding notes beside its
+ * inbox (#1023). The desktop sidebar has this banner; the drawer did not, so a
+ * vault that filled up after a first note just looked empty, with no word why.
+ */
+// Core's own key (store.ts, rootBannerDismissKey): one vault has one notice, so
+// dismissing it in the drawer or the desktop layout's sidebar settles both.
+const DISMISSED_PREFIX = 'zen.sidebar.rootBannerDismissed.'
+
+type KeyValueStore = Pick<Storage, 'getItem' | 'setItem'>
+
+export function rootNoticeDismissed(root: string, store: KeyValueStore = localStorage): boolean {
+  try {
+    return store.getItem(DISMISSED_PREFIX + root) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function dismissRootNotice(root: string, store: KeyValueStore = localStorage): void {
+  try {
+    store.setItem(DISMISSED_PREFIX + root, '1')
+  } catch {
+    // The notice comes back next time; nothing is lost.
+  }
+}
+
+const refreshListeners = new Set<() => void>()
+
+/** A rescan finished (a resume, a pull to refresh). A note landing beside the
+ *  inbox changes nothing the store lists, so an open drawer has nothing else to
+ *  tell it to ask again. */
+export function noteVaultRefreshed(): void {
+  for (const listener of refreshListeners) listener()
+}
+
+export function onVaultRefreshed(listener: () => void): () => void {
+  refreshListeners.add(listener)
+  return () => {
+    refreshListeners.delete(listener)
+  }
+}
+
+type LayoutBridge = {
+  getVaultSettings: () => Promise<{ primaryNotesLocation?: string }>
+  setVaultSettings: (settings: never) => Promise<unknown>
+}
+
+/** Vault.json keeps the rest of the settings as they are. */
+export async function showRootNotes(bridge: LayoutBridge): Promise<void> {
+  const settings = await bridge.getVaultSettings()
+  await bridge.setVaultSettings({ ...settings, primaryNotesLocation: 'root' } as never)
+}

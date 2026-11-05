@@ -2,17 +2,18 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { installWikilinkTouchNavigation } from './wikilink-touch.ts'
 
-function setup() {
+function setup(dataset: Record<string, string> = { target: 'A note' }) {
   const target = new EventTarget()
   let time = 0
   let selected = false
   const opened: string[] = []
+  const selected_selector: string[] = []
   const uninstall = installWikilinkTouchNavigation(target as unknown as Document, {
     hasSelection: () => selected,
     open: (link) => opened.push(link),
     now: () => time
   })
-  const element = { closest: () => ({ dataset: { target: 'A note' } }) }
+  const element = { closest: (selector: string) => (selected_selector.push(selector), { dataset }) }
   const send = (type: string, x = 20, y = 20, fingers = 1): Event => {
     const event = new Event(type, { cancelable: true })
     Object.defineProperties(event, {
@@ -23,7 +24,7 @@ function setup() {
     target.dispatchEvent(event)
     return event
   }
-  return { opened, send, uninstall, tick: (ms: number) => { time += ms }, select: () => { selected = true } }
+  return { opened, send, uninstall, selectors: selected_selector, tick: (ms: number) => { time += ms }, select: () => { selected = true } }
 }
 
 test('a wikilink opens only after a completed short tap (#50)', () => {
@@ -33,6 +34,26 @@ test('a wikilink opens only after a completed short tap (#50)', () => {
   s.tick(100)
   assert.equal(s.send('touchend').defaultPrevented, true)
   assert.deepEqual(s.opened, ['A note'])
+  s.uninstall()
+})
+
+test('a link in a table cell opens on release, not as the touch starts', () => {
+  const s = setup({ wikilink: 'Cell note' })
+  s.send('touchstart')
+  assert.deepEqual(s.opened, [])
+  assert.ok(s.selectors.some((selector) => selector.includes('.cm-table-cell[data-rendered="true"] a.wikilink')))
+  assert.equal(s.send('touchend').defaultPrevented, true)
+  assert.deepEqual(s.opened, ['Cell note'])
+  s.uninstall()
+})
+
+test('a scroll that starts on a link in a table cell opens nothing', () => {
+  const s = setup({ wikilink: 'Cell note' })
+  s.send('touchstart')
+  s.send('touchmove', 20, 70)
+  s.send('touchend')
+  assert.deepEqual(s.opened, [])
+  assert.equal(s.send('mousedown').defaultPrevented, true)
   s.uninstall()
 })
 

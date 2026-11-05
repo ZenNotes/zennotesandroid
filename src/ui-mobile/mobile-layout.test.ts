@@ -21,6 +21,26 @@ test('Cloud footer reserves a touch-sized row below the phone floating navigatio
   }
 })
 
+test('nothing hides the Cloud footer row, so Cancel shows while a sign-in is connecting', () => {
+  // Core's footer offers Cancel only in the 'connecting' phase, and a phone has no
+  // other way out of a sign-in the browser never returns from. The iPhone hides the
+  // strip outside attention; this shell must not, by phase or at all.
+  css.walkRules((rule) => {
+    if (!/cloud-sync|h-8:has/.test(rule.selector)) return
+    rule.walkDecls((decl) => {
+      const hides =
+        (decl.prop === 'display' && decl.value.startsWith('none')) ||
+        (decl.prop === 'visibility' && decl.value === 'hidden') ||
+        (decl.prop === 'height' && /^0(px)?$/.test(decl.value))
+      assert.equal(hides, false, `${rule.selector} { ${decl.prop}: ${decl.value} }`)
+    })
+  })
+})
+
+test('the Cloud footer takes no tap while the keyboard is up, where the toolbar draws', () => {
+  assert.equal(declaration('.zn-mobile.zn-phone.zn-kb-open [data-cloud-sync-action]', 'pointer-events'), 'none')
+})
+
 /** Like `declaration`, but finds a selector inside a comma-grouped rule. */
 function groupedDeclaration(selector: string, property: string): string | undefined {
   let result: string | undefined

@@ -1,16 +1,22 @@
 type Options = { hasSelection: () => boolean; open: (target: string) => void; now?: () => number }
 
+/** A link the editor draws, and one a Markdown table cell draws for itself, which
+ *  core follows on mousedown from inside a contenteditable and then focuses the
+ *  note it opened. A table link comes through here so both behave alike. */
+const LINKS = '.cm-wikilink, .cm-table-cell[data-rendered="true"] a.wikilink'
+
 export function installWikilinkTouchNavigation(root: Document, options: Options): () => void {
   const now = options.now ?? Date.now
   let tap: { target: string; id: number; x: number; y: number; at: number } | null = null
   let suppressMouseUntil = 0
   let touchingLink = false
   const linkAt = (event: Event): HTMLElement | null =>
-    (event.target as HTMLElement | null)?.closest?.<HTMLElement>('.cm-wikilink') ?? null
+    (event.target as HTMLElement | null)?.closest?.<HTMLElement>(LINKS) ?? null
   const cancel = (): void => { tap = null }
   const start = (event: TouchEvent): void => {
     tap = null
-    const target = linkAt(event)?.dataset.target
+    const link = linkAt(event)
+    const target = link?.dataset.target ?? link?.dataset.wikilink
     if (event.touches.length === 1) touchingLink = Boolean(target)
     else touchingLink ||= Boolean(target)
     if (!target) return

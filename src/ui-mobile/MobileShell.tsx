@@ -1525,7 +1525,11 @@ const DESKTOP_ONLY_COMMAND_TITLES = [
   // Unsplash bridge methods, which this shell leaves out (no Unsplash tab on
   // Android). Named for the same reason as the two above.
   'Add Cover from Unsplash',
-  'Set Unsplash Access Key'
+  'Set Unsplash Access Key',
+  // PDF Embeds picks between a compact card and an inline viewer, and Android's
+  // WebView has no PDF viewer to pick, on a phone or a tablet.
+  'PDF Embeds: Inline Viewer',
+  'PDF Embeds: Compact Card'
 ]
 
 /** Additionally hidden in the phone LAYOUT: splits/panes, tabs and the
@@ -1533,8 +1537,7 @@ const DESKTOP_ONLY_COMMAND_TITLES = [
  *  one, and Focus Editor is a keyboard move with nothing to do on a touch
  *  screen. Both titles of a toggling command are named: which one shows
  *  depends on its state. Auto-Reveal scrolls a sidebar the phone does not
- *  have. PDF Embeds picks between a compact card and an inline viewer, and
- *  Android's WebView has no PDF viewer to pick. */
+ *  have. */
 const PHONE_LAYOUT_HIDDEN_COMMAND_TITLES = [
   'Split Right',
   'Split Down',
@@ -1568,8 +1571,6 @@ const PHONE_LAYOUT_HIDDEN_COMMAND_TITLES = [
   'Focus Editor',
   'Enable Auto-Reveal Active Note',
   'Disable Auto-Reveal Active Note',
-  'PDF Embeds: Inline Viewer',
-  'PDF Embeds: Compact Card',
   // Drawings are view-only on phones — creating one opens an uneditable
   // canvas. ('New Drawing' also catches 'Embed New Drawing' via the
   // .includes row match; 'Embed Existing Drawing…' stays, embeds render.)

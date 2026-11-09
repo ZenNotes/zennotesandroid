@@ -1581,9 +1581,9 @@ export class MobileVault {
 
   /** First-boot seed for brand-new vaults: one phone-focused welcome note
    *  (the desktop demo tour stays available via its command). */
-  async seedWelcomeNote(): Promise<void> {
+  async seedWelcomeNote(body: string = WELCOME_NOTE_BODY): Promise<void> {
     await this.ensureVaultLayout()
-    await this.fs.writeText(WELCOME_NOTE_PATH, WELCOME_NOTE_BODY)
+    await this.fs.writeText(WELCOME_NOTE_PATH, body)
     this.invalidateMeta(WELCOME_NOTE_PATH)
     emitVaultChange({ kind: 'add', path: WELCOME_NOTE_PATH, folder: 'inbox', scope: 'content' })
   }

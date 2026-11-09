@@ -4,7 +4,7 @@ import { loadMobileModule } from '../../tooling/load-mobile-module.ts'
 
 Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => null, setItem: () => {}, removeItem: () => {} } })
 const { MobileVault } = await loadMobileModule(['./src/bridge/vault-fs'])
-const { WELCOME_NOTE_BODY, isUntouchedInboxWelcome, sha256OfText } = await loadMobileModule(['./src/bridge/welcome-note'])
+const { WELCOME_NOTE_BODY, WELCOME_NOTE_TABLET_BODY, welcomeNoteBody, isUntouchedInboxWelcome, sha256OfText } = await loadMobileModule(['./src/bridge/welcome-note'])
 
 // The desktop's settleSeededInbox (ZenNotes 4e8c13f8), mirrored: an inbox that only
 // holds the untouched Welcome says nothing about the layout, and goes once there
@@ -153,4 +153,11 @@ test('a folder the inbox was remapped to is never touched', async () => {
   const { vault, files } = memoryVault({ '.zennotes/vault.json': json, '01 - Entry/Welcome to ZenNotes.md': WELCOME_NOTE_BODY, 'Trips/Rome.md': '' })
   assert.equal(await vault.settleSeededInbox(), false)
   assert.ok(files.has('01 - Entry/Welcome to ZenNotes.md'))
+})
+
+test('the tablet Welcome counts as untouched, and names no circle', async () => {
+  assert.equal(isUntouchedInboxWelcome('Welcome to ZenNotes.md', await sha256OfText(WELCOME_NOTE_TABLET_BODY)), true)
+  assert.doesNotMatch(WELCOME_NOTE_TABLET_BODY, /circle/i)
+  assert.equal(welcomeNoteBody(true), WELCOME_NOTE_BODY)
+  assert.equal(welcomeNoteBody(false), WELCOME_NOTE_TABLET_BODY)
 })

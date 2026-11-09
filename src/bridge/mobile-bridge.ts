@@ -159,7 +159,7 @@ import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vaul
 import { isPhoneViewport } from '../viewport'
 import { welcomeNoteBody } from './welcome-note'
 
-let appVersion = '1.1.56'
+let appVersion = '1.1.57'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {

@@ -1,8 +1,40 @@
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { zenNotesAssets } from '@zennotes/app-core/vite'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const ROOT = import.meta.dirname
+
+/**
+ * The on-device TikZ engine ships in @zennotes/portable-vault
+ * (`tikzjax/*`), served at `tikzjax/` beside index.html where the package's
+ * tikz.ts loads it on the first TikZ render. Emitted as plain assets, never
+ * imported, so it stays off the boot path and out of every chunk.
+ */
+function tikzjaxFromPortableVault(): Plugin {
+  const resolve = createRequire(import.meta.url).resolve
+  const files = ['tikzjax.js', 'fonts.css'].map((name) => ({
+    name,
+    path: resolve(`@zennotes/portable-vault/tikzjax/${name}`)
+  }))
+  return {
+    name: 'zennotes-tikzjax',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const file = files.find((entry) => req.url?.split('?')[0]?.endsWith(`/tikzjax/${entry.name}`))
+        if (!file) return next()
+        res.setHeader('Content-Type', file.name.endsWith('.css') ? 'text/css' : 'text/javascript')
+        res.end(readFileSync(file.path))
+      })
+    },
+    generateBundle() {
+      for (const file of files) {
+        this.emitFile({ type: 'asset', fileName: `tikzjax/${file.name}`, source: readFileSync(file.path) })
+      }
+    }
+  }
+}
 
 function rendererManualChunk(id: string): string | undefined {
   const normalizedId = id.split('\\').join('/')
@@ -55,7 +87,7 @@ export default defineConfig({
   // ~13 MB, 12 MB of it the Xiaolai CJK handwriting subsets) into the APK. 1.1.20
   // shipped without it and drawings resolved fonts as they always have, so keep
   // the download at ~31 MB instead of ~44 MB.
-  plugins: [...zenNotesAssets({ harper: false, excalidraw: false }), react()],
+  plugins: [...zenNotesAssets({ harper: false, excalidraw: false }), react(), tikzjaxFromPortableVault()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,

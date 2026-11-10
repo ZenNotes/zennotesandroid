@@ -75,7 +75,7 @@ describe('settleWithin', () => {
 describe('boot', () => {
   const bootstrap = readFileSync(new URL('./bootstrap.ts', import.meta.url), 'utf8')
   const main = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
-  const bridge = readFileSync(new URL('./bridge/mobile-bridge.ts', import.meta.url), 'utf8')
+  const host = readFileSync(new URL('./bridge/host.ts', import.meta.url), 'utf8')
 
   it('bounds the native preferences restore before main.tsx loads', () => {
     assert.match(bootstrap, /await waitAtBoot\('native preferences', readNativePreferences\(RESTORED_PREFERENCES, Preferences\)\)/)
@@ -87,8 +87,8 @@ describe('boot', () => {
   it('bounds every native answer it can do without before the app renders', () => {
     assert.match(main, /await waitAtBoot\('Cloud sign-in links', configureMobileCloudAuth\(appVersion\)\)/)
     assert.match(main, /await waitAtBoot\('shared captures', importPendingShares\(\)/)
-    assert.match(bridge, /await waitAtBoot\('the app version', CapApp\.getInfo\(\)\)/)
-    assert.match(bridge, /if \(info\.inTime && info\.value\.version\) appVersion = info\.value\.version/)
+    assert.match(host, /await waitAtBoot\('the app version', CapApp\.getInfo\(\)\)/)
+    assert.match(host, /if \(info\.inTime && info\.value\.version\) appVersion = info\.value\.version/)
   })
 
   it('keeps the two second wait generous next to a normal answer', () => {

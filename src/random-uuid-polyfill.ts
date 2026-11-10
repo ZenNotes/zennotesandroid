@@ -7,6 +7,6 @@
  * through the getRandomValues fallback in bridge/uuid.ts, and this covers code
  * that calls crypto.randomUUID directly.
  */
-import { installRandomUUIDPolyfill } from './bridge/uuid'
+import { installRandomUUIDPolyfill } from '@zennotes/portable-vault/uuid'
 
 installRandomUUIDPolyfill()

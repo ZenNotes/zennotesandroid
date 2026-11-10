@@ -26,10 +26,30 @@ for (const entry of [manifest, ...manifest.dependencies]) {
   const installed = JSON.parse(await readFile(join(root, 'node_modules', entry.name, 'package.json'), 'utf8'))
   assert.equal(installed.version, entry.version, `${entry.name} installed version`)
 }
+// The vault layer and Cloud glue are @zennotes/portable-vault's (core 2.85);
+// a copy growing back in src/bridge/ is the drift the package exists to end.
+const LIFTED = [
+  'vault-fs', 'vault-core', 'welcome-note', 'database-open', 'link-metadata', 'imported-assets', 'events',
+  'uuid', 'base64', 'tikz', 'mobile-cloud-sync', 'cloud-sync-client', 'cloud-sync-repository',
+  'cloud-sync-staging', 'cloud-sync-refresh', 'cloud-sync-work', 'cloud-layout', 'mobile-cloud-auth',
+  'mobile-cloud-encryption', 'mobile-direct-upload', 'mobile-publish-assets', 'remote-client',
+  'remote-vault', 'remote-workspace', 'fs-errors'
+]
+for (const name of await readdir(join(root, 'src/bridge'))) {
+  const stem = name.replace(/(?:\.[a-z]+)?\.tsx?$/, '')
+  assert.ok(!LIFTED.includes(stem), `src/bridge/${name}: ${stem} lives in @zennotes/portable-vault now`)
+}
 const host = createRequire(join(root, 'package.json'))
 const core = createRequire(join(root, 'node_modules/@zennotes/app-core/package.json'))
 for (const peer of ['react', 'react-dom', '@codemirror/state', '@codemirror/view', '@codemirror/language', '@lezer/common', '@lezer/highlight']) {
   assert.equal(core.resolve(peer), host.resolve(peer), `Duplicate ${peer}`)
+}
+// One contract and one domain: the vault must run on the copies app-core and
+// the shell run on, or two event buses and two request lifetimes come apart.
+const vault = createRequire(join(root, 'node_modules/@zennotes/portable-vault/package.json'))
+for (const shared of ['@zennotes/bridge-contract/ipc', '@zennotes/shared-domain/cloud-sync']) {
+  assert.equal(vault.resolve(shared), host.resolve(shared), `@zennotes/portable-vault has a second ${shared}`)
+  assert.equal(core.resolve(shared), host.resolve(shared), `@zennotes/app-core has a second ${shared}`)
 }
 for (const privatePath of ['store', 'lib/pane-layout', 'src/store.ts', 'components/EditorPane']) {
   assert.throws(() => host.resolve(`@zennotes/app-core/${privatePath}`), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' })

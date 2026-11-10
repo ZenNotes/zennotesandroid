@@ -1,75 +1,44 @@
 import { relocateLocalVault } from '@zennotes/app-core/workspace'
 /**
- * The mobile `window.zen` — third ZenBridge implementation (after Electron IPC
- * and the web HTTP bridge). Vault operations run against the on-device vault
- * (vault-fs.ts); desktop-only surfaces resolve to the same "unsupported"
- * states the web bridge uses so the shared UI hides those affordances.
- *
- * `runtime` reports `'web'`: the current bridge contract only knows
- * 'desktop' | 'web', and every desktop-only code path in app-core is gated on
- * `runtime === 'desktop'`, so 'web' + capability flags produces the correct
- * mobile behavior without modifying the zennotes repo.
+ * Android's `window.zen`: @zennotes/portable-vault's bridge (every method
+ * that acts on the open vault, Cloud, a remote workspace or a desktop-only
+ * stub, which this file and the iPhone shell's used to carry as copies),
+ * over this app's host (host.ts) and the vault tiers below: app storage
+ * (`VAULT_ROOT_PREFIX`, under vaultsRoot()), picked shared-storage folders
+ * through SAF (`EXTERNAL_VAULT_ROOT_PREFIX`, folder-picker.ts) and the inert
+ * iCloud tier kept from the iPhone (`ICLOUD_VAULT_ROOT_PREFIX`). The tiers
+ * open a vault by handing its NativeFs to the package's openPortableVault.
  */
 import { registerPlugin } from '@capacitor/core'
-import { App as CapApp } from '@capacitor/app'
-import { waitAtBoot } from '../boot-wait'
-import { Clipboard } from '@capacitor/clipboard'
-import {
-  installZenBridge,
-  type ZenAppInfo,
-  type ZenBridge,
-  type ZenCapabilities
-} from '@zennotes/bridge-contract/bridge'
-import type {
-  AppUpdateState,
-  AssetMeta,
-  CliInstallStatus,
-  DeletedAsset,
-  DirectoryBrowseResult,
-  ImportedAsset,
-  LocalVaultEntry,
-  NoteFolder,
-  NoteMeta,
-  RaycastExtensionStatus,
-  ServerCapabilities,
-  ServerSessionStatus,
-  TikzRenderResponse,
-  VaultInfo,
-  VaultTextSearchBackendPreference,
-  VaultTextSearchCapabilities,
-  VaultTextSearchMatch
-} from '@zennotes/shared-domain/ipc'
-import { createDatabaseOps } from '@zennotes/shared-domain/database-ops'
-import { missingDatabaseAsNull } from './database-open'
+import { Filesystem } from '@capacitor/filesystem'
+import { installZenBridge } from '@zennotes/bridge-contract/bridge'
+import type { DirectoryBrowseResult, LocalVaultEntry, VaultInfo } from '@zennotes/shared-domain/ipc'
 import { normalizeVaultDisplayName, resolveVaultName } from '@zennotes/shared-domain/vault-display-name'
-import type {
-  CustomCodeLanguage,
-  CustomCodeLanguageInstallInput,
-  CustomCodeLanguageUpdateInput
-} from '@zennotes/shared-domain/custom-code-languages'
-import type {
-  ApplyWorkflowInput,
-  WorkflowFile,
-  WorkflowRunReceipt,
-  WorkflowRunSummary,
-  WorkflowUndoResult,
-  WriteWorkflowInput
-} from '@zennotes/bridge-contract/workflows'
-import type {
-  McpClientStatus,
-  McpInstructionsPayload,
-  McpServerRuntime
-} from '@zennotes/shared-domain/mcp-clients'
-import { MobileVault } from './vault-fs'
+import {
+  activePortableVault,
+  activeVault as activePortableOrRemoteVault,
+  bootPortableVault,
+  cloudBackgroundSyncHost,
+  createPortableBridge,
+  currentVaultFolderName,
+  isMobileNoteIndexReady,
+  openPortableVault
+} from '@zennotes/portable-vault/bridge'
+import { installPortableHost, type HostVaults, type PortableHost } from '@zennotes/portable-vault/host'
+import type { RemoteVault } from '@zennotes/portable-vault/remote-vault'
+import { activeRemote, disconnectRemote, listProfiles } from '@zennotes/portable-vault/remote-workspace'
+import { PortableVault } from '@zennotes/portable-vault/vault'
+import { sanitizeNoteTitle } from '@zennotes/portable-vault/vault-core'
+import { welcomeNoteBody } from '@zennotes/portable-vault/welcome-note'
 import {
   listVaultDirs,
+  NativeFs,
   readVaultDisplayName,
   readVaultDisplayNameAtUrl,
   VAULTS_DIR,
   vaultsRoot,
   initVaultsRoot
 } from './native-fs'
-import { Filesystem } from '@capacitor/filesystem'
 import {
   getStoragePref,
   setStoragePref,
@@ -85,93 +54,19 @@ import {
   pickExternalVault,
   resolveExternalVault
 } from './folder-picker'
-import { emitVaultChange, onVaultChange, onOpenNoteRequested, requestOpenNote } from './events'
 import type { BackgroundSyncHost } from './background-sync'
-import { randomUUID } from './uuid'
 import { openAssetExternally } from './open-asset'
-import { renderTikzOnDevice } from './tikz'
-import { fetchLinkMetadataOnDevice } from './link-metadata'
-import {
-  connectMobileCloudAccount,
-  getMobileCloudAccountStatus,
-  getMobileCloudServiceAccount,
-  listMobileCloudPublishedNotes,
-  listMobileCloudVaults,
-  logoutMobileCloudAccount,
-  onMobileCloudAccountChange,
-  publishMobileCloudNote,
-  unpublishMobileCloudNote,
-  updateMobileCloudPublishedNote
-} from './mobile-cloud-auth'
-import { uploadObject } from './cloud-sync-client'
-import {
-  changeMobileCloudEncryptionPassphrase,
-  finishMobileCloudEncryptionSetup,
-  finishNewMobileCloudRecoveryKey,
-  getMobileCloudEncryptionStatus,
-  lockMobileCloudEncryption,
-  prepareMobileCloudEncryptionSetup,
-  prepareNewMobileCloudRecoveryKey,
-  unlockMobileCloudEncryption
-} from './mobile-cloud-encryption'
-import { mobilePublishAssetPlatform } from './mobile-publish-assets'
-import {
-  createAndLinkMobileCloudVault,
-  createMobileCloudBackup,
-  deleteMobileCloudBackup,
-  downloadMobileCloudBackup,
-  getMobileCloudBackupSchedule,
-  getMobileCloudSettingsConflict,
-  getMobileCloudVaultLink,
-  linkMobileCloudVault,
-  listMobileCloudBackupItems,
-  listMobileCloudBackupItemsPage,
-  listMobileCloudBackups,
-  resolveMobileCloudSettingsConflict,
-  restoreMobileCloudBackup,
-  restoreMobileCloudBackupNote,
-  syncMobileCloudVault,
-  hasMobileCloudVaultChanges,
-  updateMobileCloudBackupSchedule,
-  unlinkMobileCloudVault,
-  deleteMobileCloudVault,
-  getMobileCloudConflict,
-  saveMobileCloudConflictDraft,
-  resolveMobileCloudConflict,
-  getMobileCloudBootstrapConflict,
-  resolveMobileCloudBootstrapConflict
-} from './mobile-cloud-sync'
-import { RemoteVault } from './remote-vault'
-import {
-  activeRemote,
-  connectRemote,
-  connectRemoteProfile,
-  deleteProfile,
-  disconnectRemote,
-  listProfiles,
-  remoteStateKey,
-  remoteVaultInfo,
-  remoteWorkspaceInfo,
-  restoreRemoteAtBoot,
-  saveProfile
-} from './remote-workspace'
-import { folderForRelativePath, posixNormalize, sanitizeNoteTitle } from './vault-core'
+import { androidHost, loadNativeAppVersion } from './host'
 import { isPhoneViewport } from '../viewport'
-import { welcomeNoteBody } from './welcome-note'
 
-let appVersion = '1.1.57'
+export { currentVaultFolderName, isMobileNoteIndexReady, loadNativeAppVersion }
 
-export async function loadNativeAppVersion(): Promise<string> {
-  try {
-    // Bounded (boot-wait.ts): a late answer is dropped, so the version stays
-    // the package fallback Cloud sign-in is configured with below.
-    const info = await waitAtBoot('the app version', CapApp.getInfo())
-    if (info.inTime && info.value.version) appVersion = info.value.version
-  } catch {
-    // No native layer (browser dev server) — keep the package fallback.
-  }
-  return appVersion
+/** The open vault, typed for this app: every local vault it opens runs on
+ *  NativeFs (openVaultByName), so the shell can read its native root. */
+export function activeVault(): PortableVault<NativeFs> | RemoteVault {
+  return activePortableOrRemoteVault() as PortableVault<NativeFs> | RemoteVault
 }
+
 const CURRENT_VAULT_KEY = 'zn-mobile:current-vault'
 const DEFAULT_VAULT_NAME = 'My Vault'
 export const VAULT_ROOT_PREFIX = 'zn://vaults/'
@@ -291,7 +186,7 @@ export async function listSwitchableVaults(): Promise<MobileVaultEntry[]> {
  *  the storage pref, which every switch path keeps in sync. */
 export function isCurrentVaultEntry(entry: MobileVaultEntry): boolean {
   if (activeRemote()) return false
-  if (!vault || vault.name !== entry.name) return false
+  if (currentVaultFolderName() !== entry.name) return false
   if (getStoragePref() !== entry.tier) return false
   // Same-named external folders are legal — the bookmark is the identity.
   if (entry.tier === 'external') return entry.root === currentExternalVaultRoot()
@@ -390,68 +285,16 @@ export async function moveVault(entry: MobileVaultEntry, to: 'local' | 'icloud')
   })
 }
 
-const MOBILE_CAPABILITIES: ZenCapabilities = {
-  supportsUpdater: false,
-  supportsNativeMenus: false,
-  supportsFloatingWindows: false,
-  // SAF external-folder tier (spec 03 advanced tier): pick any
-  // shared-storage folder via ACTION_OPEN_DOCUMENT_TREE (FolderPickerPlugin);
-  // file ops route through SafFsPlugin since Capacitor Filesystem cannot
-  // address content:// tree URIs. This is what enables Syncthing/FolderSync
-  // cross-device workflows.
-  supportsLocalFilesystemPickers: true,
-  // Self-hosted ZenNotes servers connect over CapacitorHttp (native, so no
-  // CORS and the Bearer header works). The desktop UI entry points stay
-  // hidden (they also gate on runtime === 'desktop'); the mobile shell owns
-  // the connect flow via the store's actions, which gate on this flag alone.
-  supportsRemoteWorkspace: true,
-  supportsCloudSync: true,
-  supportsCliInstall: false,
-  supportsCustomTemplates: true,
-  // vault.json's template folder (#1024) survives a save from this device
-  // (vault-fs.ts normalizes it as desktop does) and a folder rename follows
-  // it. A self-hosted vault answers with its server's own flag instead.
-  supportsTemplateFolder: true,
-  // TextMate grammar import is a desktop feature for now: grammars are
-  // per-app (not per-vault), so nothing desyncs by gating this off. The
-  // Settings section hides itself behind this flag.
-  supportsCustomCodeLanguages: false
-}
+/**
+ * The on-device vault this app opened last, null before boot. Unlike the
+ * package's currentVaultFolderName, it still answers while a remote
+ * workspace is in front, as this bridge's own `vault` did: the share inbox
+ * was written against that.
+ */
+let localVault: PortableVault<NativeFs> | null = null
 
-function mobileAppInfo(): ZenAppInfo {
-  return {
-    name: 'zennotes-android',
-    productName: 'ZenNotes',
-    version: appVersion,
-    description: 'ZenNotes for Android',
-    homepage: 'https://zennotes.org',
-    runtime: 'web',
-    hostKind: 'android',
-    // The WebView's user agent names the Android version, the device model
-    // and the Chrome build, the lines a bug report from a phone needs beside
-    // the app version (#814); nothing else here is guessed.
-    ...(typeof navigator !== 'undefined' && navigator.userAgent
-      ? { engine: navigator.userAgent }
-      : {})
-  }
-}
-
-let vault: MobileVault | null = null
-let indexedVault: MobileVault | RemoteVault | null = null
-
-export function activeVault(): MobileVault | RemoteVault {
-  const remote = activeRemote()
-  if (remote) return remote.vault
-  if (!vault) throw new Error('No vault is open')
-  return vault
-}
-
-function activeMobileVault(): MobileVault {
-  const current = activeVault()
-  if (!(current instanceof MobileVault)) {
-    throw new Error('ZenNotes Cloud sync is available for on-device vaults only.')
-  }
-  return current
+function openedLocalVault(): PortableVault<NativeFs> | null {
+  return localVault
 }
 
 /** The open vault's root as a native URI (`file://`, or a SAF `content://`
@@ -460,33 +303,15 @@ function activeMobileVault(): MobileVault {
 export function activeVaultNativeRoot(): string | null {
   try {
     const current = activeVault()
-    return current instanceof MobileVault ? current.fs.rootUri : null
+    return current instanceof PortableVault ? (current.fs as NativeFs).rootUri : null
   } catch {
     return null
   }
 }
 
 /** The open vault as background sync sees it: ready when it is an on-device
- *  vault linked to the signed-in account, the check app-core's automatic
- *  sync makes before each run. */
-export const mobileBackgroundSyncHost: BackgroundSyncHost = {
-  async ready() {
-    let current: MobileVault
-    try {
-      current = activeMobileVault()
-    } catch {
-      return false
-    }
-    const status = await getMobileCloudAccountStatus()
-    if (status.state !== 'connected' || !status.account) return false
-    const link = await getMobileCloudVaultLink(current)
-    return link !== null && link.base_url === status.account.base_url
-  },
-  async sync() {
-    await syncMobileCloudVault(activeMobileVault())
-  },
-  onVaultChange
-}
+ *  vault linked to the signed-in account (the package's check). */
+export const mobileBackgroundSyncHost: BackgroundSyncHost = cloudBackgroundSyncHost
 
 function vaultNameFromRoot(root: string): string {
   const raw = root.startsWith(VAULT_ROOT_PREFIX) ? root.slice(VAULT_ROOT_PREFIX.length) : root
@@ -496,7 +321,7 @@ function vaultNameFromRoot(root: string): string {
 
 /** Human-readable location for the settings UI — where the vault actually
  *  lives, not an internal token. */
-function friendlyVaultRoot(v: MobileVault): string {
+function friendlyVaultRoot(v: { name: string; fs: NativeFs }): string {
   if (!v.fs.isCloud) return `On this device › ZenNotes › ${v.name}`
   const uri = decodeURIComponent(v.fs.cloudRootUri ?? '')
   if (uri.includes('Mobile Documents/iCloud~md~zennotes')) {
@@ -509,102 +334,36 @@ function friendlyVaultRoot(v: MobileVault): string {
   return `Folder › ${v.name}`
 }
 
-function currentVaultInfo(): VaultInfo | null {
-  const remote = remoteVaultInfo()
-  if (remote) return remote
-  if (!vault) return null
-  // The root is a label, not a path, so the core cannot read the folder's
-  // name off it; folderName is what the display name falls back to and what
-  // the Vault name field shows as its placeholder (ZenNotes #692).
-  return { root: friendlyVaultRoot(vault), name: vault.name, folderName: vault.name }
-}
-
-/**
- * The open vault as the app names it: the display name from its vault.json
- * when it has one (ZenNotes #692), else the folder name. Desktop resolves
- * this in main (describeVault) before the renderer ever sees a VaultInfo,
- * and the renderer only re-derives the name after a settings save or an
- * external vault.json change, so a shell that handed over the folder name
- * would show it until the first save. Every bridge method that returns the
- * opened vault goes through here; a remote workspace's name comes from its
- * server and passes untouched. The settings read is cached after the first
- * open, and a vault whose vault.json cannot be read keeps its folder name,
- * the way it always did.
- */
-/**
- * The open local vault's folder name, null in a remote workspace or before
- * boot. The Vaults sheet lists folders and must mark the one that is open
- * whatever the vault is called (rename and delete act on the folder), and
- * the core's shell snapshot carries the vault's shown name, not its folder,
- * so the sheet asks the bridge, which holds the MobileVault by folder name.
- */
-export function currentVaultFolderName(): string | null {
-  if (remoteVaultInfo()) return null
-  return vault?.name ?? null
-}
-
-async function describeCurrentVault(): Promise<VaultInfo | null> {
-  const info = currentVaultInfo()
-  if (!info || remoteVaultInfo() || !vault) return info
-  try {
-    const settings = await vault.getVaultSettings()
-    return { ...info, name: resolveVaultName(settings.displayName, info.name) }
-  } catch {
-    return info
-  }
-}
-
-/** Whether app-core's note-index request has completed for the active vault. */
-export function isMobileNoteIndexReady(): boolean {
-  if (!indexedVault) return false
-  try {
-    return activeVault() === indexedVault
-  } catch {
-    return false
-  }
-}
-
-async function listNotesForActiveVault(): Promise<NoteMeta[]> {
-  const source = activeVault()
-  const notes = await source.listNotes()
-  try {
-    if (activeVault() === source) indexedVault = source
-  } catch {
-    // The vault closed while its listing was in flight; do not mark it ready.
-  }
-  return notes
-}
-
 async function openVaultByName(name: string, cloudRootUri: string | null = null): Promise<VaultInfo> {
-  const next = new MobileVault(name, cloudRootUri)
-  await next.open()
-  vault = next
+  const info = await openPortableVault(name, new NativeFs(name, cloudRootUri))
+  localVault = activePortableVault() as PortableVault<NativeFs>
   localStorage.setItem(CURRENT_VAULT_KEY, name)
-  return (await describeCurrentVault()) as VaultInfo
+  return info
 }
 
 /**
  * First-run bootstrap: open the remembered vault, or create the default one
  * seeded with the mobile welcome note so the first launch lands in guidance
  * instead of an empty screen (the full demo tour stays available as a
- * command). When the
- * storage preference is iCloud (spec 03 tier), the vault lives in the
- * ubiquity container instead — falling back to local when iCloud is
- * unavailable (signed out) rather than blocking the app.
+ * command). A remembered remote workspace wins; unreachable servers fall
+ * through to the local tiers so launch never blocks on the network.
  */
 export async function bootVault(): Promise<void> {
-  // Resolve where local vaults live before anything touches the tier —
+  // Resolve where local vaults live before anything touches the tier:
   // devices without usable app-external storage fall back to internal.
   await initVaultsRoot()
-  // A remembered remote workspace wins; unreachable servers fall through to
-  // the local tiers so launch never blocks on the network.
-  if (await restoreRemoteAtBoot()) return
-  await openLocalVaultTier()
+  await bootPortableVault()
 }
 
 /** The local storage tiers (external folder / iCloud / on-device), shared by
- *  boot and by returning from a remote workspace. */
+ *  boot and by returning from a remote workspace. When the storage
+ *  preference is iCloud (spec 03 tier), the vault lives in the ubiquity
+ *  container instead, falling back to local when iCloud is unavailable
+ *  rather than blocking the app. */
 async function openLocalVaultTier(): Promise<void> {
+  // Where local vaults live is resolved before anything touches the tier
+  // (once per install; a no-op after that).
+  await initVaultsRoot()
   const remembered = localStorage.getItem(CURRENT_VAULT_KEY)
 
   if (getStoragePref() === 'external') {
@@ -627,7 +386,7 @@ async function openLocalVaultTier(): Promise<void> {
           : (cloudVaults[0] ?? remembered ?? DEFAULT_VAULT_NAME)
       const fresh = !cloudVaults.includes(name)
       await openVaultByName(name, `${status.rootUrl}/${encodeURIComponent(name)}`)
-      if (fresh) await vault?.seedWelcomeNote(welcomeNoteBody(isPhoneViewport()))
+      if (fresh) await activePortableVault().seedWelcomeNote(welcomeNoteBody(isPhoneViewport(), 'android'))
       return
     }
     console.warn('iCloud vault preferred but unavailable — falling back to local storage')
@@ -643,7 +402,7 @@ async function openLocalVaultTier(): Promise<void> {
     return
   }
   await openVaultByName(DEFAULT_VAULT_NAME)
-  await vault?.seedWelcomeNote(welcomeNoteBody(isPhoneViewport()))
+  await activePortableVault().seedWelcomeNote(welcomeNoteBody(isPhoneViewport(), 'android'))
 }
 
 /**
@@ -692,7 +451,7 @@ function shareCaptureTitle(body: string): string | undefined {
 }
 
 export async function importPendingShares(): Promise<number> {
-  if (!vault) return 0
+  if (!openedLocalVault()) return 0
   let captures: ShareCapture[] = []
   try {
     captures = (await ShareInbox.drain()).captures ?? []
@@ -711,370 +470,12 @@ export async function importPendingShares(): Promise<number> {
 }
 
 // --------------------------------------------------------------------
-// Databases — the shared composition (@shared/database-ops, extracted from
-// the web bridge in 2.20) bound to the active vault's file ops. Remap-aware:
-// the shared layout honors vault.json `systemFolderPaths` when composing
-// `.base/` paths, which the old local copy of this glue did not.
+// The host: where vaults live, for the package's bridge
 // --------------------------------------------------------------------
 
-const dbOps = createDatabaseOps({
-  // Absent files answer null; real errors must throw (openDatabase reads
-  // null as "bare CSV, adopt it" and writes an inferred schema over it).
-  // readTextOrNull follows that contract for the local tiers.
-  readFileTextOrNull: (relPath) => activeVault().fs.readTextOrNull(posixNormalize(relPath)),
-  writeFile: async (relPath, text) => {
-    await activeVault().writeNote(relPath, text)
-  },
-  createFolder: (folder, subpath) => activeVault().createFolder(folder, subpath),
-  renameFolder: (folder, oldSubpath, newSubpath) =>
-    activeVault().renameFolder(folder, oldSubpath, newSubpath),
-  listFolders: () => activeVault().listFolders(),
-  vaultLayout: async () => {
-    const settings = await activeVault().getVaultSettings()
-    return {
-      primaryNotesAtRoot: settings.primaryNotesLocation === 'root',
-      systemFolderPaths: settings.systemFolderPaths
-    }
-  }
-})
-
-const {
-  openDatabase: openDatabaseOrThrow,
-  writeDatabaseRows,
-  writeDatabaseSchema,
-  createDatabase,
-  createRecordPage,
-  renameDatabase,
-  listDatabases
-} = dbOps
-// A tab whose database is gone answers null (database-open.ts).
-const openDatabase = missingDatabaseAsNull(openDatabaseOrThrow)
-
-// --------------------------------------------------------------------
-// Asset URL resolution (WebView-loadable file URLs)
-// --------------------------------------------------------------------
-
-// Remote assets: `resolve*AssetUrl` is synchronous, so the first request for
-// a path returns null while the bytes are fetched natively (Bearer header —
-// an <img> src could never send it); completion emits a change event for the
-// requesting note, whose re-render then hits this cache.
-const remoteAssetUrls = new Map<string, string>()
-const remoteAssetPending = new Set<string>()
-
-function remoteAssetUrl(assetPath: string, notePathForRerender: string | null): string | null {
-  const cached = remoteAssetUrls.get(assetPath)
-  if (cached) return cached
-  const remote = activeRemote()
-  if (!remote || remoteAssetPending.has(assetPath)) return null
-  remoteAssetPending.add(assetPath)
-  void remote.client
-    .fetchAssetBase64(assetPath)
-    .then(({ base64, mimeType }) => {
-      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-      remoteAssetUrls.set(
-        assetPath,
-        URL.createObjectURL(new Blob([bytes], { type: mimeType }))
-      )
-      emitVaultChange({
-        kind: 'change',
-        path: notePathForRerender ?? assetPath,
-        folder: folderForRelativePath(notePathForRerender ?? assetPath) ?? 'inbox',
-        scope: 'content'
-      })
-    })
-    .catch(() => {})
-    .finally(() => remoteAssetPending.delete(assetPath))
-  return null
-}
-
-function resolveLocalAssetUrl(_vaultRoot: string, notePath: string, href: string): string | null {
-  const trimmed = href.trim()
-  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) return null
-  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmed)) return null
-
-  const stripQueryAndHash = (value: string): string => {
-    const hashIdx = value.indexOf('#')
-    const queryIdx = value.indexOf('?')
-    const cutIdx =
-      hashIdx === -1 ? queryIdx : queryIdx === -1 ? hashIdx : Math.min(hashIdx, queryIdx)
-    return cutIdx === -1 ? value : value.slice(0, cutIdx)
-  }
-  let decoded = stripQueryAndHash(trimmed)
-  try {
-    decoded = decodeURIComponent(decoded)
-  } catch {
-    // keep raw
-  }
-  const noteDir = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : ''
-  let target: string
-  if (decoded.startsWith('/')) {
-    target = decoded.replace(/^\/+/, '')
-  } else if (noteDir) {
-    target = `${noteDir}/${decoded}`
-  } else {
-    target = decoded
-  }
-  target = posixNormalize(target)
-  if (target.startsWith('../') || target === '..') return null
-  if (activeRemote()) return remoteAssetUrl(target, notePath)
-  return vault?.fs.fileSrc(target) ?? null
-}
-
-function resolveVaultAssetUrl(_vaultRoot: string, assetPath: string): string | null {
-  const trimmed = assetPath.trim()
-  if (!trimmed) return null
-  const normalized = posixNormalize(trimmed.replace(/^\/+/, ''))
-  if (normalized.startsWith('../') || normalized === '..') return null
-  if (activeRemote()) return remoteAssetUrl(normalized, null)
-  return vault?.fs.fileSrc(normalized) ?? null
-}
-
-function vaultAssetPath(assetPath: string): string {
-  const normalized = posixNormalize(String(assetPath ?? '').trim().replace(/^\/+/, ''))
-  if (!normalized || normalized.startsWith('../') || normalized === '..') {
-    throw new Error('Asset path is invalid.')
-  }
-  return normalized
-}
-
-async function readVaultAssetBase64(assetPath: string): Promise<string> {
-  const normalized = vaultAssetPath(assetPath)
-  const remote = activeRemote()
-  if (remote) return (await remote.client.fetchAssetBase64(normalized)).base64
-  return await activeMobileVault().fs.readBase64(normalized)
-}
-
-/** A published note's attachments, for the staged publish: an on-device
- *  vault's files are fingerprinted and uploaded natively; a remote vault's
- *  arrive as base64. */
-const mobilePublishAssets = mobilePublishAssetPlatform({
-  async fingerprint(assetPath) {
-    const normalized = vaultAssetPath(assetPath)
-    if (activeRemote()) return null
-    const print = await activeMobileVault().fs.readForSync(normalized, false)
-    return { uri: print.uri, sha256: print.sha256, byteLength: print.byteLength }
-  },
-  readBase64: readVaultAssetBase64
-}, uploadObject)
-
-// --------------------------------------------------------------------
-// Dropped-file token bucket (mirrors the web bridge)
-// --------------------------------------------------------------------
-
-const droppedFiles = new Map<string, File>()
-
-function getPathForFile(file: File): string | null {
-  if (!file) return null
-  const token = `mobile-drop://${randomUUID()}/${encodeURIComponent(file.name)}`
-  droppedFiles.set(token, file)
-  return token
-}
-
-async function importFilesToNote(notePath: string, sourcePaths: string[]): Promise<ImportedAsset[]> {
-  const results: ImportedAsset[] = []
-  for (const raw of sourcePaths) {
-    const file = droppedFiles.get(raw)
-    if (!file) continue
-    results.push(await activeVault().importDroppedFile(notePath, file))
-    droppedFiles.delete(raw)
-  }
-  return results
-}
-
-// --------------------------------------------------------------------
-// Stubs shared with the web bridge (desktop-only surfaces)
-// --------------------------------------------------------------------
-
-function notImplemented(name: string): never {
-  throw new Error(`zen.${name} is not available in the mobile app`)
-}
-
-const unsupportedUpdateState: AppUpdateState = {
-  phase: 'unsupported',
-  currentVersion: appVersion,
-  availableVersion: null,
-  releaseName: null,
-  releaseDate: null,
-  releaseNotes: null,
-  progressPercent: null,
-  transferredBytes: null,
-  totalBytes: null,
-  bytesPerSecond: null,
-  installable: false,
-  message: 'Updates are delivered through the App Store.'
-}
-
-const MOBILE_CLI_STATUS: CliInstallStatus = {
-  available: false,
-  reason: 'CLI installation is only available in the desktop build.',
-  defaultTarget: '',
-  requiresSudo: false,
-  targetOnPath: false,
-  pathHint: null,
-  installedAt: null,
-  installedByThisApp: false,
-  supportedPlatform: false
-}
-
-const MOBILE_RAYCAST_STATUS: RaycastExtensionStatus = {
-  available: false,
-  reason: 'Raycast extension installation is only available in the macOS desktop build.',
-  supportedPlatform: false,
-  installed: false,
-  upToDate: false,
-  extensionPath: '',
-  sourcePath: null,
-  raycastInstalled: false,
-  nodeAvailable: false,
-  npmAvailable: false,
-  nodePath: null,
-  npmPath: null,
-  nodeVersion: null,
-  npmVersion: null,
-  nodeMeetsMinimum: false,
-  npmMeetsMinimum: false,
-  installedVersion: null,
-  bundledVersion: appVersion,
-  lastInstalledAt: null
-}
-
-// --------------------------------------------------------------------
-// The bridge object
-// --------------------------------------------------------------------
-
-export const mobileBridge: ZenBridge = {
-  getCapabilities: (): ZenCapabilities => MOBILE_CAPABILITIES,
-  getAppInfo: (): ZenAppInfo => mobileAppInfo(),
-
-  // 'android' (with hostKind above) lets app-core tell native shells apart;
-  // core only special-cases 'darwin', so Android still gets Ctrl-based keymaps
-  // and no Mac-only chrome — the right defaults for hardware keyboards.
-  platform: async () => 'android' as const,
-  platformSync: () => 'android' as const,
-  // WebView-safe system families plus the fonts the shell bundles itself
-  // (public/fonts + index.html @font-face): Android offers no way to install
-  // fonts app-wide, so shipping them is the only path to real choices here.
-  listSystemFonts: async () => [
-    'Cutive Mono',
-    'Droid Sans Mono',
-    'Georgia',
-    'Noto Sans',
-    'Noto Serif',
-    'Roboto',
-    'Roboto Serif',
-    'Ubuntu Sans',
-    'Ubuntu Sans Mono',
-    'monospace',
-    'sans-serif',
-    'serif'
-  ],
-  getAppIconDataUrl: async () => null,
-  zoomInApp: async () => 1,
-  zoomOutApp: async () => 1,
-  resetAppZoom: async () => 1,
-  getAppUpdateState: async () => unsupportedUpdateState,
-  checkForAppUpdates: async () => unsupportedUpdateState,
-  checkForAppUpdatesWithUi: async () => {},
-  downloadAppUpdate: async () => unsupportedUpdateState,
-  installAppUpdate: async () => {},
-
-  getCloudAccountStatus: getMobileCloudAccountStatus,
-  connectCloudAccount: connectMobileCloudAccount,
-  logoutCloudAccount: logoutMobileCloudAccount,
-  onCloudAccountChange: onMobileCloudAccountChange,
-  getCloudServiceAccount: getMobileCloudServiceAccount,
-  listCloudPublishedNotes: listMobileCloudPublishedNotes,
-  publishCloudNote: (input) => publishMobileCloudNote(input, mobilePublishAssets),
-  updateCloudPublishedNote: (shareId, input) => updateMobileCloudPublishedNote(shareId, input, mobilePublishAssets),
-  unpublishCloudNote: unpublishMobileCloudNote,
-  listCloudVaults: listMobileCloudVaults,
-  getCloudVaultLink: () => getMobileCloudVaultLink(activeMobileVault()),
-  linkCloudVault: (vaultId) => linkMobileCloudVault(activeMobileVault(), vaultId),
-  createAndLinkCloudVault: (name, options) =>
-    createAndLinkMobileCloudVault(activeMobileVault(), name, options),
-  // End-to-end encryption for the account. Settings shows it only while the
-  // service offers it and this build opted in (MOBILE_CLOUD_END_TO_END_ENCRYPTION).
-  // Moving an existing vault into an encrypted one (encryptCloudVault) stays
-  // desktop-only.
-  getCloudEncryptionStatus: getMobileCloudEncryptionStatus,
-  prepareCloudEncryptionSetup: prepareMobileCloudEncryptionSetup,
-  finishCloudEncryptionSetup: finishMobileCloudEncryptionSetup,
-  unlockCloudEncryption: unlockMobileCloudEncryption,
-  changeCloudEncryptionPassphrase: changeMobileCloudEncryptionPassphrase,
-  prepareNewCloudRecoveryKey: prepareNewMobileCloudRecoveryKey,
-  finishNewCloudRecoveryKey: finishNewMobileCloudRecoveryKey,
-  lockCloudEncryption: lockMobileCloudEncryption,
-  unlinkCloudVault: () => unlinkMobileCloudVault(activeMobileVault()),
-  deleteCloudVault: () => deleteMobileCloudVault(activeMobileVault()),
-  syncCloudVault: () => syncMobileCloudVault(activeMobileVault()),
-  hasCloudVaultChanges: () => {
-    const vault = activeVault()
-    return vault instanceof MobileVault ? hasMobileCloudVaultChanges(vault) : Promise.resolve(false)
-  },
-  getCloudBootstrapConflict: (conflict) =>
-    getMobileCloudBootstrapConflict(activeMobileVault(), conflict),
-  resolveCloudBootstrapConflict: (resolution) =>
-    resolveMobileCloudBootstrapConflict(activeMobileVault(), resolution),
-  getCloudConflict: (conflictId) =>
-    getMobileCloudConflict(activeMobileVault(), conflictId),
-  saveCloudConflictDraft: (conflictId, draftText) =>
-    saveMobileCloudConflictDraft(activeMobileVault(), conflictId, draftText),
-  resolveCloudConflict: (resolution) =>
-    resolveMobileCloudConflict(activeMobileVault(), resolution),
-  getCloudSettingsConflict: () => getMobileCloudSettingsConflict(activeMobileVault()),
-  resolveCloudSettingsConflict: (choice) =>
-    resolveMobileCloudSettingsConflict(activeMobileVault(), choice),
-  listCloudBackups: () => listMobileCloudBackups(activeMobileVault()),
-  getCloudBackupSchedule: () => getMobileCloudBackupSchedule(activeMobileVault()),
-  updateCloudBackupSchedule: (enabled) =>
-    updateMobileCloudBackupSchedule(activeMobileVault(), enabled),
-  listCloudBackupItems: (backupId) =>
-    listMobileCloudBackupItems(activeMobileVault(), backupId),
-  listCloudBackupItemsPage: (backupId, query) =>
-    listMobileCloudBackupItemsPage(activeMobileVault(), backupId, query),
-  createCloudBackup: (label) => createMobileCloudBackup(activeMobileVault(), label),
-  downloadCloudBackup: (backupId) => downloadMobileCloudBackup(activeMobileVault(), backupId),
-  deleteCloudBackup: (backupId) => deleteMobileCloudBackup(activeMobileVault(), backupId),
-  restoreCloudBackup: (backupId) => restoreMobileCloudBackup(activeMobileVault(), backupId),
-  restoreCloudBackupNote: (backupId, snapshotItemId) =>
-    restoreMobileCloudBackupNote(activeMobileVault(), backupId, snapshotItemId),
-
-  getServerCapabilities: async (): Promise<ServerCapabilities | null> =>
-    activeRemote()?.capabilities ?? null,
-  getServerSession: async (): Promise<ServerSessionStatus> => ({
-    authenticated: true,
-    authRequired: false,
-    supportsSessionLogin: false
-  }),
-  loginServerSession: async (): Promise<ServerSessionStatus> => ({
-    authenticated: true,
-    authRequired: false,
-    supportsSessionLogin: false
-  }),
-  logoutServerSession: async (): Promise<ServerSessionStatus> => ({
-    authenticated: true,
-    authRequired: false,
-    supportsSessionLogin: false
-  }),
-  getRemoteWorkspaceInfo: async () => remoteWorkspaceInfo(),
-  connectRemoteWorkspace: (baseUrl, authToken) => connectRemote(baseUrl, authToken),
-  disconnectRemoteWorkspace: async () => {
-    await disconnectRemote()
-    // Reopen the remembered local tier so the app lands somewhere real.
-    await openLocalVaultTier()
-    return describeCurrentVault()
-  },
-  // Mobile never boots into a broken workspace (an unreachable remote falls
-  // back to the local vault in bootVault), so "retry" simply reports where
-  // the app already landed.
-  retryWorkspaceBoot: () => describeCurrentVault(),
-  listRemoteWorkspaceProfiles: () => listProfiles(),
-  saveRemoteWorkspaceProfile: (input) => saveProfile(input),
-  deleteRemoteWorkspaceProfile: (id) => deleteProfile(id),
-  connectRemoteWorkspaceProfile: (id) => connectRemoteProfile(id),
-
-  getCurrentVault: () => describeCurrentVault(),
-  listLocalVaults: async (): Promise<LocalVaultEntry[]> => {
+const vaults: HostVaults = {
+  openDefault: () => openLocalVaultTier(),
+  async list(): Promise<LocalVaultEntry[]> {
     const dirs = await listVaultDirs()
     // The switcher shows each vault by the name it goes by (#692): one small
     // vault.json read per folder, the folder name when there is none.
@@ -1086,12 +487,12 @@ export const mobileBridge: ZenBridge = {
       }))
     )
   },
-  openLocalVault: async (root: string) => {
+  async open(root: string): Promise<VaultInfo> {
     // One entry point for switching to any device-reachable vault: local
     // roots return to local storage mode, zn://icloud-vaults/ roots open the
-    // named vault in the iCloud container, and the external token reopens
-    // the bookmarked Files-app folder. Either way leaves remote mode.
-    await disconnectRemote()
+    // named vault in the iCloud container, and an external token reopens
+    // the picked folder its bookmark names. The bridge has left remote mode
+    // before this runs.
     const externalBookmark = externalBookmarkFromRoot(root)
     if (externalBookmark !== null || root === EXTERNAL_VAULT_ROOT) {
       const external = await resolveExternalVault(externalBookmark ?? undefined)
@@ -1114,33 +515,17 @@ export const mobileBridge: ZenBridge = {
     setStoragePref('local')
     return await openVaultByName(vaultNameFromRoot(root))
   },
-  closeVault: () => describeCurrentVault(),
-  pickVault: async () => {
+  async pick(): Promise<VaultInfo | null> {
     const picked = await pickExternalVault()
     if (!picked) return null
     await disconnectRemote()
     return await openVaultByName(picked.name, picked.url)
   },
-  selectVaultPath: async (path: string) => {
-    // In a remote workspace this is the server-side vault chooser (fed by
-    // browseServerDirectories below), matching the desktop flow.
-    const remote = activeRemote()
-    if (remote) {
-      const serverVault = await remote.client.selectVaultPath(path)
-      remote.serverVault = serverVault
-      remote.vault = new RemoteVault(
-        remote.client,
-        serverVault,
-        remoteStateKey(remote.client.baseUrl, serverVault)
-      )
-      return currentVaultInfo() as VaultInfo
-    }
+  async select(path: string): Promise<VaultInfo> {
     const name = sanitizeNoteTitle(vaultNameFromRoot(path))
     return await openVaultByName(name)
   },
-  browseServerDirectories: async (path = ''): Promise<DirectoryBrowseResult> => {
-    const remote = activeRemote()
-    if (remote) return await remote.client.browseDirectories(path)
+  async browse(path: string): Promise<DirectoryBrowseResult> {
     const dirs = await listVaultDirs()
     return {
       currentPath: path || VAULT_ROOT_PREFIX,
@@ -1149,246 +534,22 @@ export const mobileBridge: ZenBridge = {
       shortcuts: [{ label: 'Vaults', path: VAULT_ROOT_PREFIX }]
     }
   },
-  getVaultSettings: () => activeVault().getVaultSettings(),
-  setVaultSettings: (next) => activeVault().setVaultSettings(next),
-  readWorkspaceState: () => activeVault().readWorkspaceState(),
-  writeWorkspaceState: (json) => activeVault().writeWorkspaceState(json),
-  rootContentHiddenByInboxMode: () => activeVault().rootContentHiddenByInboxMode(),
+  describeRoot: (vault) => friendlyVaultRoot(vault as { name: string; fs: NativeFs }),
+  // A vault attachment, unlike an arbitrary OS path, is a file this app owns,
+  // so the phone can genuinely open it (an intent to another app) instead of
+  // answering 'desktop-only' the way the web bridge must.
+  openAssetExternally: (relPath) => openAssetExternally(activeVault(), relPath)
+}
 
-  listNotes: listNotesForActiveVault,
-  listFolders: () => activeVault().listFolders(),
-  listAssets: () => activeVault().listAssets(),
-  hasAssetsDir: () => activeVault().hasAssetsDir(),
-  generateDemoTour: () => activeVault().generateDemoTour(),
-  removeDemoTour: () => activeVault().removeDemoTour(),
-  listTemplates: () => activeVault().listTemplates(),
-  readTemplate: (sourcePath) => activeVault().readTemplate(sourcePath),
-  writeTemplate: (input) => activeVault().writeTemplate(input),
-  deleteTemplate: (sourcePath) => activeVault().deleteTemplate(sourcePath),
+const mobileHost: PortableHost = { ...androidHost, vaults }
 
-  // Workflows are not offered on mobile: the Settings toggle is hidden by the
-  // shell (MobileShell mobilizer), so none of these surfaces render. The
-  // stubs mirror the web bridge: empty reads, honest rejections for anything
-  // that would pretend to write. Note the vault may genuinely CONTAIN
-  // `.zennotes/workflows/` files (synced from a desktop via iCloud) — they
-  // are simply inert here, exactly like on the web.
-  listWorkflows: async (): Promise<WorkflowFile[]> => [],
-  writeWorkflow: (_input: WriteWorkflowInput): Promise<WorkflowFile> =>
-    Promise.reject(new Error('Editing workflows is available in the ZenNotes desktop app.')),
-  deleteWorkflow: (_sourcePath: string): Promise<void> =>
-    Promise.reject(new Error('Editing workflows is available in the ZenNotes desktop app.')),
-  applyWorkflow: (_input: ApplyWorkflowInput): Promise<WorkflowRunReceipt> =>
-    Promise.reject(new Error('Running workflows is available in the ZenNotes desktop app.')),
-  undoWorkflowRun: (_runId: string): Promise<WorkflowUndoResult> =>
-    Promise.reject(new Error('Running workflows is available in the ZenNotes desktop app.')),
-  listWorkflowRuns: async (): Promise<WorkflowRunSummary[]> => [],
-  deleteWorkflowRuns: async (_workflowId: string): Promise<number> => 0,
-  getVaultTextSearchCapabilities: async (): Promise<VaultTextSearchCapabilities> => ({
-    ripgrep: false,
-    fzf: false
-  }),
-  searchVaultText: (
-    query: string,
-    _backend: VaultTextSearchBackendPreference = 'auto'
-  ): Promise<VaultTextSearchMatch[]> => activeVault().searchVaultText(query),
-  readNote: async (relPath) => {
-    const content = await activeVault().readNote(relPath)
-    // Drawings are view-only on phones (spec 06 defers touch drawing):
-    // injecting viewModeEnabled at read time makes Excalidraw load with no
-    // editing chrome — pan/zoom only. Never persisted (see writeNote).
-    if (isPhoneViewport() && relPath.toLowerCase().endsWith('.excalidraw')) {
-      try {
-        const doc = JSON.parse(content.body) as { appState?: Record<string, unknown> }
-        doc.appState = { ...(doc.appState ?? {}), viewModeEnabled: true }
-        return { ...content, body: JSON.stringify(doc, null, 2) }
-      } catch {
-        // unparsable drawing — let the editor surface it as-is
-      }
-    }
-    return content
-  },
-  readNoteComments: (relPath) => activeVault().readNoteComments(relPath),
-  writeNoteComments: (relPath, comments) => activeVault().writeNoteComments(relPath, comments),
-  scanTasks: () => activeVault().scanTasks(),
-  scanTasksForPath: (relPath) => activeVault().scanTasksForPath(relPath),
-  openDatabase,
-  writeDatabaseRows,
-  writeDatabaseSchema,
-  createDatabase,
-  renameDatabase,
-  createRecordPage,
-  listDatabases,
-  writeNote: (relPath, body) => {
-    // Insurance for the view-only drawing injection above: never let
-    // viewModeEnabled reach disk, or desktop would open the drawing locked.
-    if (relPath.toLowerCase().endsWith('.excalidraw')) {
-      try {
-        const doc = JSON.parse(body) as { appState?: Record<string, unknown> }
-        if (doc.appState && 'viewModeEnabled' in doc.appState) {
-          delete doc.appState.viewModeEnabled
-          body = JSON.stringify(doc, null, 2)
-        }
-      } catch {
-        // not JSON — write as-is
-      }
-    }
-    return activeVault().writeNote(relPath, body)
-  },
-  appendToNote: (relPath, body, position) => activeVault().appendToNote(relPath, body, position),
-  createNote: (folder, title, subpath) => activeVault().createNote(folder, title, subpath),
-  createExcalidraw: (folder, subpath, title) =>
-    activeVault().createExcalidraw(folder, subpath, title),
-  renameNote: (relPath, nextTitle) => activeVault().renameNote(relPath, nextTitle),
-  deleteNote: (relPath) => activeVault().deleteNote(relPath),
-  moveToTrash: (relPath) => activeVault().moveToTrash(relPath),
-  restoreFromTrash: (relPath) => activeVault().restoreFromTrash(relPath),
-  emptyTrash: () => activeVault().emptyTrash(),
-  archiveNote: (relPath) => activeVault().archiveNote(relPath),
-  unarchiveNote: (relPath) => activeVault().unarchiveNote(relPath),
-  duplicateNote: (relPath) => activeVault().duplicateNote(relPath),
-  exportNotePdf: async () => {
-    throw new Error('PDF export is available in the ZenNotes desktop app.')
-  },
-  // The command is gated on runtime === 'desktop', so this never surfaces;
-  // the reject keeps the contract honest if it ever does.
-  exportNoteDocx: async () => {
-    throw new Error('Word export is available in the ZenNotes desktop app.')
-  },
-  revealNote: async () => {},
-  revealNoteTarget: async () => {},
-  revealFilePath: async () => {},
-  // External file links name OS paths outside the iOS sandbox; the exact
-  // 'desktop-only' token makes app-core show its friendly toast.
-  openExternalFile: async () => ({ ok: false, error: 'desktop-only' }),
-  openExternalUrl: async () => ({ ok: false, error: 'desktop-only' }),
-  openAssetExternally: (relPath) => openAssetExternally(activeVault(), relPath),
-  // Bookmark cards fetch open-graph metadata natively (link-metadata.ts) —
-  // a WKWebView fetch of an arbitrary page would be CORS-blocked.
-  fetchLinkMetadata: (url) => fetchLinkMetadataOnDevice(url),
-  moveNote: (relPath, targetFolder, targetSubpath) =>
-    activeVault().moveNote(relPath, targetFolder, targetSubpath),
-  importFilesToNote,
-  importPastedImage: (input) => activeVault().importPastedImage(input),
-  readVaultAssetBase64,
-  renameAsset: (relPath, nextName): Promise<AssetMeta> =>
-    activeVault().renameAsset(relPath, nextName),
-  moveAsset: (relPath, targetDir): Promise<AssetMeta> =>
-    activeVault().moveAsset(relPath, targetDir),
-  duplicateAsset: (relPath): Promise<AssetMeta> => activeVault().duplicateAsset(relPath),
-  deleteAsset: (relPath): Promise<DeletedAsset> => activeVault().deleteAsset(relPath),
-  restoreDeletedAsset: (asset): Promise<AssetMeta> => activeVault().restoreDeletedAsset(asset),
-  listDeletedAssets: (): Promise<DeletedAsset[]> => activeVault().listDeletedAssets(),
-  purgeDeletedAsset: (undoToken): Promise<void> => activeVault().purgeDeletedAsset(undoToken),
-  emptyDeletedAssets: (): Promise<void> => activeVault().emptyDeletedAssets(),
-  createFolder: (folder, subpath) => activeVault().createFolder(folder, subpath),
-  renameFolder: (folder, oldSubpath, newSubpath) =>
-    activeVault().renameFolder(folder, oldSubpath, newSubpath),
-  deleteFolder: (folder, subpath) => activeVault().deleteFolder(folder, subpath),
-  duplicateFolder: (folder, subpath) => activeVault().duplicateFolder(folder, subpath),
-  revealFolder: async () => {},
-  revealFolderTarget: async () => {},
-  revealAssetsDir: async () => {},
-  getPathForFile,
-  openFolderTemporary: async () => {},
-  resolveLocalAssetUrl,
-  resolveVaultAssetUrl,
-
-  onVaultChange,
-  onOpenSettings: () => () => {},
-  onOpenNoteRequested,
-  notifyRendererReady: () => {},
-  onAppUpdateState: () => () => {},
-
-  windowMinimize: () => {},
-  windowToggleMaximize: () => {},
-  windowClose: () => {},
-  openNoteWindow: async (relPath: string) => {
-    requestOpenNote(relPath)
-  },
-  openVaultWindow: async () => null,
-  readExternalFile: async () => notImplemented('readExternalFile'),
-  writeExternalFile: async () => notImplemented('writeExternalFile'),
-  moveExternalFileToVault: async () => notImplemented('moveExternalFileToVault'),
-  followExternalFileLink: async () => ({ ok: false, error: 'desktop-only' }),
-  openMarkdownFile: async () => false,
-  openFileDialog: async () => false,
-  toggleQuickCapture: async () => {
-    const meta: NoteMeta = await activeVault().createNote('quick')
-    requestOpenNote(meta.path)
-  },
-  getQuickCaptureHotkey: async () => '',
-  setQuickCaptureHotkey: async () => ({
-    ok: false,
-    hotkey: '',
-    error: 'Quick capture hotkeys are a desktop feature.'
-  }),
-  getQuickCapturePinned: async () => false,
-  setQuickCapturePinned: async () => false,
-  // On-device TeX via the vendored TikZJax wasm engine (src/bridge/tikz.ts);
-  // falls back to the desktop-only message if the assets aren't bundled.
-  renderTikz: (source): Promise<TikzRenderResponse> => renderTikzOnDevice(source),
-
-  mcpGetRuntime: async () =>
-    ({
-      command: '',
-      args: [],
-      env: {},
-      entryPath: null,
-      available: false,
-      reason: 'MCP client installation is only available in the desktop build.'
-    }) as unknown as McpServerRuntime,
-  mcpGetStatuses: async (): Promise<McpClientStatus[]> => [],
-  mcpInstall: async () => notImplemented('mcpInstall'),
-  mcpUninstall: async () => notImplemented('mcpUninstall'),
-  mcpGetInstructions: async () =>
-    ({
-      defaultValue: '',
-      current: '',
-      isCustom: false,
-      filePath: ''
-    }) as unknown as McpInstructionsPayload,
-  mcpSetInstructions: async () => notImplemented('mcpSetInstructions'),
-  cliGetStatus: async () => MOBILE_CLI_STATUS,
-  cliInstall: async () => notImplemented('cliInstall'),
-  cliUninstall: async () => notImplemented('cliUninstall'),
-  raycastGetStatus: async () => MOBILE_RAYCAST_STATUS,
-  raycastInstall: async () => notImplemented('raycastInstall'),
-  clipboardWriteText: (text: string) => {
-    void Clipboard.write({ string: text }).catch(() => {})
-  },
-  clipboardReadText: () => '',
-
-  getConfigSync: () => null,
-  setConfig: async () => {},
-  getConfigPath: async () => null,
-  revealConfigFile: async () => {},
-  onConfigChange: () => () => {},
-
-  listCustomThemes: async () => [],
-  getCustomThemesDir: async () => null,
-  revealCustomThemesDir: async () => {},
-  deleteCustomTheme: async () => {},
-  createCustomTheme: async () => null,
-  onCustomThemesChange: () => () => {},
-  // Custom code languages: capability-gated off (supportsCustomCodeLanguages
-  // false hides the Settings section); the empty list keeps the editor and
-  // reading view on their zero-cost fast path.
-  listCustomCodeLanguages: async (): Promise<CustomCodeLanguage[]> => [],
-  installCustomCodeLanguage: (_input: CustomCodeLanguageInstallInput): Promise<CustomCodeLanguage> =>
-    Promise.reject(new Error('Custom code languages are available in the ZenNotes desktop app.')),
-  updateCustomCodeLanguage: (_input: CustomCodeLanguageUpdateInput): Promise<CustomCodeLanguage> =>
-    Promise.reject(new Error('Custom code languages are available in the ZenNotes desktop app.')),
-  revealCustomCodeLanguagesDir: async () => {},
-  deleteCustomCodeLanguage: (_id: string): Promise<void> =>
-    Promise.reject(new Error('Custom code languages are available in the ZenNotes desktop app.')),
-  onCustomCodeLanguagesChange: () => () => {},
-  listOverrides: async () => [],
-  revealOverridesDir: async () => {},
-  deleteOverride: async () => {},
-  onOverridesChange: () => () => {},
-  toggleDevTools: async () => {}
+/** Installs the host alone, for what boot runs before the bridge: Cloud
+ *  sign-in reads it (configureMobileCloudAuth), and the bridge itself is
+ *  installed after that, as it always was. */
+export function installMobileHost(): void {
+  installPortableHost(mobileHost)
 }
 
 export function installMobileBridge(): void {
-  installZenBridge(mobileBridge)
+  installZenBridge(createPortableBridge(mobileHost))
 }

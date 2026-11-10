@@ -3,14 +3,15 @@
 //   npm run core:adopt -- core-2.53.1-core.h0123456789abcdef            # a GitHub release (draft or published)
 //   npm run core:adopt -- --from ../../opensource/zennotes/dist/boundary-release/core-2.53.1-core.h...   # a local rehearsal build
 //
-// The release (or rehearsal directory) holds three archives, one `.tgz.json`
+// The release (or rehearsal directory) holds four archives, one `.tgz.json`
 // provenance file per archive, and `release.json`. Nothing is written until
 // every archive's SHA-256 and SHA-512 match its provenance, the package inside
 // each archive is the one the provenance names, every recorded source commit is
 // the same 40-hex commit, and the build came from a clean upstream tree. Then
 // the archives replace the ones in `vendor/zennotes/`, `manifest.json` becomes
-// the app-core provenance file (as it always has been), the three `file:`
-// dependencies in `package.json` point at the new filenames, the README
+// the app-core provenance file (as it always has been), the four `file:`
+// dependencies in `package.json` point at the new filenames (a package new to
+// the set gets its pin inserted beside the others), the README
 // sentence that names the vendored release is rewritten, `npm install` pins
 // the set in `package-lock.json`, and `check-core-boundary.mjs` runs.
 //
@@ -29,7 +30,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
-export const CORE_PACKAGES = ['@zennotes/app-core', '@zennotes/bridge-contract', '@zennotes/shared-domain']
+export const CORE_PACKAGES = ['@zennotes/app-core', '@zennotes/bridge-contract', '@zennotes/shared-domain', '@zennotes/portable-vault']
 export const DEFAULT_REPO = 'ZenNotes/zennotes'
 const VENDOR_DIR = 'vendor/zennotes'
 
@@ -105,21 +106,54 @@ export async function verifyCandidate(candidate, { allowDirty = false, expectedS
   return core
 }
 
-/** Files named by a manifest: the app-core archive and its two dependencies. */
+/** Files named by a manifest: the app-core archive and its dependencies. */
 export function manifestFiles(manifest) {
   return [manifest, ...(manifest.dependencies ?? [])].map((entry) => entry.file)
 }
 
-/** Rewrite the three `file:` dependencies in package.json text, keeping everything else byte for byte. */
-export function rewritePackageJson(text, manifest) {
+/**
+ * Rewrite the `file:` dependencies in package.json text, keeping everything
+ * else byte for byte. A package already in the vendored set (`vendored`, the
+ * names in the current manifest) must have exactly one pin: a missing one is
+ * a broken package.json, never something to paper over. A package new to the
+ * set (the portable vault, 2.85) gets its pin inserted among the others, in
+ * name order, on the adoption that brings it.
+ */
+export function rewritePackageJson(text, manifest, vendored = CORE_PACKAGES) {
   let next = text
   for (const entry of [manifest, ...manifest.dependencies]) {
     const pattern = new RegExp(`("${entry.name.replace(/[/@.]/g, '\\$&')}":\\s*")file:${VENDOR_DIR}/[^"]+(")`, 'g')
     const matches = [...next.matchAll(pattern)]
+    if (matches.length === 0 && !vendored.includes(entry.name)) {
+      next = insertPin(next, entry)
+      continue
+    }
     assert.equal(matches.length, 1, `package.json: expected exactly one file: dependency for ${entry.name}, found ${matches.length}`)
     next = next.replace(pattern, `$1file:${VENDOR_DIR}/${entry.file}$2`)
   }
   return next
+}
+
+/** Insert a `file:` pin after the last vendored pin that sorts before it. */
+function insertPin(text, entry) {
+  const lines = text.split('\n')
+  const pins = lines
+    .map((line, index) => ({ index, match: line.match(new RegExp(`^(\\s*)"(@zennotes/[^"]+)":\\s*"file:${VENDOR_DIR}/[^"]+"(,?)\\s*$`)) }))
+    .filter((pin) => pin.match)
+  assert.ok(pins.length > 0, `package.json: no vendored file: dependency to place ${entry.name} beside`)
+  const before = pins.filter((pin) => pin.match[2] < entry.name)
+  const anchor = before.length > 0 ? before[before.length - 1] : null
+  const indent = (anchor ?? pins[0]).match[1]
+  const pin = `${indent}"${entry.name}": "file:${VENDOR_DIR}/${entry.file}"`
+  if (!anchor) {
+    lines.splice(pins[0].index, 0, `${pin},`)
+  } else if (anchor.match[3] === ',') {
+    lines.splice(anchor.index + 1, 0, `${pin},`)
+  } else {
+    lines[anchor.index] = `${lines[anchor.index]},`
+    lines.splice(anchor.index + 1, 0, pin)
+  }
+  return lines.join('\n')
 }
 
 const README_PATTERN = /\[core-[^\]]+\]\(https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/tag\/core-[^)]+\)\s*\(desktop commit `[0-9a-f]{7,40}`, clean tree\)/
@@ -208,7 +242,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     for (const file of removals) console.log(`  - ${VENDOR_DIR}/${file}`)
 
     const packageText = await readFile(join(root, 'package.json'), 'utf8')
-    const nextPackageText = rewritePackageJson(packageText, manifest)
+    const vendored = [current, ...(current.dependencies ?? [])].map((entry) => entry.name)
+    const nextPackageText = rewritePackageJson(packageText, manifest, vendored)
     const readmeText = await readFile(join(root, 'README.md'), 'utf8')
     const cleanRelease = !candidate.release.localCandidate && !manifest.workingTreeDirty
     const nextReadme = cleanRelease ? rewriteReadme(readmeText, { tag: releaseTag, repo: values.repo, sourceCommit: manifest.sourceCommit }) : readmeText

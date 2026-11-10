@@ -37,23 +37,24 @@ async function candidate(options = {}, mutate = () => {}) {
   const version = options.version ?? '2.53.1'
   const bridge = await pack(directory, '@zennotes/bridge-contract', `${version}-boundaries.h1111111111111111`, options.bridge)
   const domain = await pack(directory, '@zennotes/shared-domain', `${version}-boundaries.h1111111111111111`, options.domain)
+  const vault = await pack(directory, '@zennotes/portable-vault', `${version}-boundaries.h1111111111111111`, options.vault)
   const core = {
     ...(await pack(directory, '@zennotes/app-core', `${version}-core.h2222222222222222`, options.core)),
     sourceLockSha256: 'd1900218a36064c5a2f613f1db9a6a4895086db6aa30e1cf1b8b35c18753e1c0',
     toolchain: { node: 'v22.23.2' },
-    dependencies: [structuredClone(bridge), structuredClone(domain)]
+    dependencies: [structuredClone(bridge), structuredClone(domain), structuredClone(vault)]
   }
   const release = {
     target: 'core',
     tag: `core-${core.version}`,
     sourceCommit: options.releaseSource ?? SOURCE,
     localCandidate: options.localCandidate ?? false,
-    files: [core.file, `${core.file}.json`, bridge.file, `${bridge.file}.json`, domain.file, `${domain.file}.json`]
+    files: [core.file, `${core.file}.json`, bridge.file, `${bridge.file}.json`, domain.file, `${domain.file}.json`, vault.file, `${vault.file}.json`]
   }
-  mutate({ core, bridge, domain, release })
-  for (const entry of [core, bridge, domain]) await writeFile(join(directory, `${entry.file}.json`), JSON.stringify(entry, null, 2) + '\n')
+  mutate({ core, bridge, domain, vault, release })
+  for (const entry of [core, bridge, domain, vault]) await writeFile(join(directory, `${entry.file}.json`), JSON.stringify(entry, null, 2) + '\n')
   await writeFile(join(directory, 'release.json'), JSON.stringify(release, null, 2) + '\n')
-  return { directory, core, bridge, domain, release }
+  return { directory, core, bridge, domain, vault, release }
 }
 
 async function verify(directory, options) {
@@ -178,28 +179,44 @@ const PACKAGE_JSON = `{
     "@capacitor/android": "^8.0.0",
     "@zennotes/app-core": "file:vendor/zennotes/zennotes-app-core-2.53.0-core.h598c8d004c9228a3.tgz",
     "@zennotes/bridge-contract": "file:vendor/zennotes/zennotes-bridge-contract-2.53.0-boundaries.h193dbe157c4e64d2.tgz",
+    "@zennotes/portable-vault": "file:vendor/zennotes/zennotes-portable-vault-2.53.0-boundaries.h193dbe157c4e64d2.tgz",
     "@zennotes/shared-domain": "file:vendor/zennotes/zennotes-shared-domain-2.53.0-boundaries.h193dbe157c4e64d2.tgz",
     "react": "^19.2.0"
   }
 }
 `
 
-test('rewritePackageJson swaps exactly the three file: dependencies and nothing else', () => {
-  const manifest = {
-    name: '@zennotes/app-core',
-    file: 'zennotes-app-core-2.53.1-core.h2222222222222222.tgz',
-    dependencies: [
-      { name: '@zennotes/bridge-contract', file: 'zennotes-bridge-contract-2.53.1-boundaries.h1111111111111111.tgz' },
-      { name: '@zennotes/shared-domain', file: 'zennotes-shared-domain-2.53.1-boundaries.h1111111111111111.tgz' }
-    ]
-  }
-  const next = rewritePackageJson(PACKAGE_JSON, manifest)
-  assert.equal(
-    next,
-    PACKAGE_JSON.replace(/2\.53\.0-core\.h598c8d004c9228a3/, '2.53.1-core.h2222222222222222').replaceAll('2.53.0-boundaries.h193dbe157c4e64d2', '2.53.1-boundaries.h1111111111111111')
-  )
+const NEXT_MANIFEST = {
+  name: '@zennotes/app-core',
+  file: 'zennotes-app-core-2.53.1-core.h2222222222222222.tgz',
+  dependencies: [
+    { name: '@zennotes/bridge-contract', file: 'zennotes-bridge-contract-2.53.1-boundaries.h1111111111111111.tgz' },
+    { name: '@zennotes/shared-domain', file: 'zennotes-shared-domain-2.53.1-boundaries.h1111111111111111.tgz' },
+    { name: '@zennotes/portable-vault', file: 'zennotes-portable-vault-2.53.1-boundaries.h1111111111111111.tgz' }
+  ]
+}
+const BUMPED = (text) => text
+  .replace(/2\.53\.0-core\.h598c8d004c9228a3/, '2.53.1-core.h2222222222222222')
+  .replaceAll('2.53.0-boundaries.h193dbe157c4e64d2', '2.53.1-boundaries.h1111111111111111')
+
+test('rewritePackageJson swaps exactly the four file: dependencies and nothing else', () => {
+  const next = rewritePackageJson(PACKAGE_JSON, NEXT_MANIFEST)
+  assert.equal(next, BUMPED(PACKAGE_JSON))
   assert.ok(next.includes('"react": "^19.2.0"'))
-  assert.throws(() => rewritePackageJson(PACKAGE_JSON.replace(/.*shared-domain.*\n/, ''), manifest), /exactly one file: dependency for @zennotes\/shared-domain, found 0/)
+  assert.throws(() => rewritePackageJson(PACKAGE_JSON.replace(/.*shared-domain.*\n/, ''), NEXT_MANIFEST), /exactly one file: dependency for @zennotes\/shared-domain, found 0/)
+})
+
+test('the adoption that brings the portable vault inserts its pin, in name order, and only for a package new to the set', () => {
+  const withoutVault = PACKAGE_JSON.replace(/.*portable-vault.*\n/, '')
+  const vendored = ['@zennotes/app-core', '@zennotes/bridge-contract', '@zennotes/shared-domain']
+  assert.equal(rewritePackageJson(withoutVault, NEXT_MANIFEST, vendored), BUMPED(PACKAGE_JSON))
+  // A package the current set already vendors must keep its pin; a missing one is a broken package.json.
+  assert.throws(
+    () => rewritePackageJson(withoutVault.replace(/.*shared-domain.*\n/, ''), NEXT_MANIFEST, vendored),
+    /exactly one file: dependency for @zennotes\/shared-domain, found 0/
+  )
+  // Once vendored, the vault's pin is required like the others.
+  assert.throws(() => rewritePackageJson(withoutVault, NEXT_MANIFEST), /exactly one file: dependency for @zennotes\/portable-vault, found 0/)
 })
 
 test('rewriteReadme replaces the tag, link and commit of the vendored-set sentence and reports a missing sentence', () => {

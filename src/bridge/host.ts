@@ -34,7 +34,7 @@ import type {
 import { userCertificateConnectionHint } from '@zennotes/portable-vault/remote-client'
 import { randomUUID } from '@zennotes/portable-vault/uuid'
 import { waitAtBoot } from '../boot-wait'
-import { isPhoneViewport } from '../viewport'
+import { isPhoneDevice } from '../viewport'
 import { leaveApp, returnToApp } from './background-sync'
 import { putFile } from './native-fs'
 
@@ -97,12 +97,13 @@ const shell: HostShell = {
     'sans-serif',
     'serif'
   ],
-  // The text this build has always shown (docs/portable-vault-adoption.md
-  // section 9 asks whether it should name Google Play instead).
-  updatesMessage: 'Updates are delivered through the App Store.',
+  updatesMessage: 'Updates are delivered through Google Play.',
   unavailableWhere: 'in the mobile app',
-  // Drawings are view-only on a phone layout (spec 06 defers touch drawing).
-  drawingsViewOnly: () => isPhoneViewport(),
+  // Drawings are view-only on a phone (spec 06 defers touch drawing). The
+  // device decides, as on the iPhone, not the layout: a phone switched to the
+  // desktop layout still has a phone's screen, and a tablet in the phone
+  // layout still has room to draw.
+  drawingsViewOnly: () => isPhoneDevice(),
   writeClipboard: async (text) => {
     await Clipboard.write({ string: text })
   },

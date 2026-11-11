@@ -43,6 +43,13 @@ export function smallestViewportSide(): number {
   return Math.min(window.innerWidth, window.innerHeight)
 }
 
+/** True on a phone-sized device, whatever layout the user picked. For what
+ *  depends on the screen itself rather than on the layout, such as drawings
+ *  being view-only on a phone (the iPhone shell answers the same way). */
+export function isPhoneDevice(): boolean {
+  return smallestViewportSide() < PHONE_BREAKPOINT
+}
+
 /** True on phone-sized displays, in either orientation, unless overridden. */
 export function isPhoneViewport(): boolean {
   const mode = getLayoutMode()

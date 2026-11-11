@@ -7,7 +7,9 @@ import { openNote } from '@zennotes/app-core/navigation'
 import { runEditorCommand, captureEditorInsertion, attachFiles } from '@zennotes/app-core/editor'
 import { requestRenameNote, requestTrashNote, restoreNote } from '@zennotes/app-core/notes'
 import { refreshTasks, getTasksSnapshot } from '@zennotes/app-core/tasks'
+import { vaultFileSystemContract, type VaultFileSystemContractHarness } from '@zennotes/portable-vault/vault-fs-contract'
 import { VAULT_ROOT_PREFIX, renameVault } from '../src/bridge/mobile-bridge'
+import { NativeFs, VAULTS_DIR, vaultsRoot } from '../src/bridge/native-fs'
 import { captureMobileWorkspace } from '../src/ui-mobile/workspace-context'
 import { captureAssetImporter } from '../src/ui-mobile/editor-host'
 
@@ -34,6 +36,56 @@ async function confirmAction(pending: Promise<string>, label: string) {
   button.click()
   check(await pending === 'completed', label + ' completed through public action')
 }
+/**
+ * The package's VaultFileSystem contract over this app's real NativeFs (the
+ * app-storage tier): each case on its own throwaway vault folder, removed
+ * afterwards. A storage outage cannot be produced here, so the outage halves
+ * of three cases are marked as such; NativeFs's handling of one, on app
+ * storage and on SAF, is proven in src/bridge/native-fs-contract.test.ts,
+ * and SafFsPlugin's on a real resolver by SafReadInstrumentedTest.
+ * Everything else each case asserts runs here, on the device's file system.
+ */
+const OUTAGE_NOT_PRODUCIBLE = 'outage not producible on the device'
+async function runVaultFileSystemContract() {
+  const created: string[] = []
+  const harness: VaultFileSystemContractHarness<NativeFs> = {
+    async create() {
+      const name = 'Boundary contract ' + Date.now() + ' ' + created.length
+      created.push(name)
+      const fs = new NativeFs(name)
+      await fs.init()
+      return fs
+    },
+    async reopen(fs) {
+      const again = new NativeFs(fs.rootPath.slice(VAULTS_DIR.length + 1))
+      await again.init()
+      return again
+    },
+    breakStorage() {
+      throw new Error(OUTAGE_NOT_PRODUCIBLE)
+    },
+    restoreStorage() {}
+  }
+  try {
+    for (const contract of vaultFileSystemContract) {
+      try {
+        await contract.run(harness)
+        check(true, 'VaultFileSystem contract on NativeFs: ' + contract.name)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (message === OUTAGE_NOT_PRODUCIBLE) {
+          check(true, 'VaultFileSystem contract on NativeFs: ' + contract.name + ' (all but the outage, which cannot be produced on the device)')
+          continue
+        }
+        throw new Error('VaultFileSystem contract on NativeFs failed: ' + contract.name + ': ' + message)
+      }
+    }
+  } finally {
+    for (const name of created) {
+      await Filesystem.rmdir({ path: VAULTS_DIR + '/' + name, directory: vaultsRoot(), recursive: true }).catch(() => {})
+    }
+  }
+}
 async function run() {
   // Exercise native onboarding rather than setting private core preferences.
   const onboarding = window.setInterval(() => {
@@ -51,6 +103,7 @@ async function run() {
     check((await window.zen.readNote(expected.path)).body === expected.body, 'cold launch retains exact saved bytes')
     await report('restart-passed'); return
   }
+  await runVaultFileSystemContract()
   await openLocalVault(VAULT_ROOT_PREFIX + vaultName)
   check(getShellSnapshot().vault?.name === vaultName && !getWorkspaceSnapshot().transitioning, 'public vault switch reaches native storage')
   const note = await window.zen.createNote('inbox','Boundary runtime')

@@ -1,7 +1,7 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 import { captureEditorInsertion, insertPastedImage, subscribeEditorPresentation } from '@zennotes/app-core/editor'
 import { captureAssetImporter } from './editor-host'
-import { decodeCloudSyncBase64 } from '../bridge/cloud-sync-work'
+import { decodeCloudSyncBase64 } from '@zennotes/portable-vault/cloud-sync-work'
 
 const ImagePaste = registerPlugin<{
   setEnabled(options: { enabled: boolean }): Promise<void>

@@ -1,6 +1,6 @@
 # Native package boundary validation
 
-The host consumes the three archives pinned in `vendor/zennotes/manifest.json`.
+The host consumes the four archives pinned in `vendor/zennotes/manifest.json`.
 There is no main-repository checkout or private editor/store import in the build.
 
 ## Package checks
@@ -30,9 +30,12 @@ this fixture in a release or install it on a personal device.
 3. Install and launch on the disposable device. The fixture checks native typing,
    exact Unicode and trailing whitespace, search, task observation, attachments,
    note rename, comments, trash/restore, and whole-vault rename under the public
-   workspace transition lock.
+   workspace transition lock. First it runs `@zennotes/portable-vault`'s
+   VaultFileSystem contract over the real NativeFs (strict versus lenient
+   listings, verified absence, `writeGeneration`, a `syncKey` that survives a
+   reopen), each case in a throwaway vault folder it removes.
 4. Read `boundary-validation.json` in the private Data directory in the app data container. It must
-   report `passed-awaiting-restart` with 20 checks and no error.
+   report `passed-awaiting-restart` with 28 checks (8 of them the contract) and no error.
 5. Terminate and relaunch the app without clearing its data. The report must now
    be `restart-passed`, including vault identity, selected note and exact bytes.
 6. Remove the disposable device when finished. Before a normal build, use

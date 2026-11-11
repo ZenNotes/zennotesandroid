@@ -45,7 +45,7 @@ import {
   currentExternalVaultRoot,
   type MobileVaultEntry
 } from '../bridge/mobile-bridge'
-import { sanitizeNoteTitle } from '../bridge/vault-core'
+import { sanitizeNoteTitle } from '@zennotes/portable-vault/vault-core'
 
 function Icon({ d }: { d: string }): React.JSX.Element {
   return (

@@ -11,6 +11,8 @@ const params = {
   aad: new Uint8Array(32).fill(3)
 }
 const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64')
+/** What the package hands sealForUpload: the same three, in base64. */
+const sealKeys = { header: base64(params.header), objectKey: base64(params.objectKey), aad: base64(params.aad) }
 
 /** A local-tier NativeFs whose ZenDirectUpload calls go to `plugin`. */
 async function nativeFs(plugin: Record<string, unknown>) {
@@ -56,7 +58,7 @@ it('seals into a fresh private file under .zennotes/sync/uploads, and removes it
       return { byteLength: 106, sha256: 'b'.repeat(64), plaintextByteLength: 16, plaintextSha256: 'c'.repeat(64) }
     }
   })
-  const sealed = await h.fs.sealForUpload('file:///data/ZenNotes/Test/big.bin', params)
+  const sealed = await h.fs.sealForUpload('file:///data/ZenNotes/Test/big.bin', sealKeys)
   const [path] = [...h.files.keys()]
   assert.match(path!, /^ZenNotes\/Test\/\.zennotes\/sync\/uploads\/[0-9a-f-]{36}\.zne1$/)
   assert.deepEqual(requests, [{
@@ -68,7 +70,7 @@ it('seals into a fresh private file under .zennotes/sync/uploads, and removes it
   assert.equal(h.files.size, 0)
 
   refuse = true
-  await assert.rejects(h.fs.sealForUpload('file:///data/ZenNotes/Test/big.bin', params), /encryption failed/)
+  await assert.rejects(h.fs.sealForUpload('file:///data/ZenNotes/Test/big.bin', sealKeys), /encryption failed/)
   assert.equal(h.files.size, 0)
 })
 
@@ -137,7 +139,7 @@ it('opens an encrypted download through the shared staging with this NativeFs', 
       return { uri: fileUri, sha256: sha256(bytes), byteLength: bytes.length, utf8: false }
     }
   })
-  const { NativeCloudStaging } = await loadMobileModule('./src/bridge/cloud-sync-staging.ts')
+  const { NativeCloudStaging } = await loadMobileModule('@zennotes/portable-vault/cloud-sync-staging')
   const staging = new NativeCloudStaging(h.fs, () => false, async () => assert.fail('no local reads'))
   const reference = {
     item_id: 'item', revision: 3, encoding: 'base64', sha256: sha256(plaintext), byte_length: plaintext.length,

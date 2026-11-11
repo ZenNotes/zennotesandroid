@@ -40,7 +40,7 @@ async function load(): Promise<Harness> {
         getUri: async ({ path }: { path: string }) => ({ uri: `file:///data/user/0/md.zennotes/cache/${path}` })
       }
     },
-    './remote-vault': { RemoteVault: FakeRemoteVault }
+    '@zennotes/portable-vault/remote-vault': { RemoteVault: FakeRemoteVault }
   })
   return harness
 }

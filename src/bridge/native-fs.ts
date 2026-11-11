@@ -16,14 +16,25 @@
  * All paths passed in are vault-relative POSIX paths; this module owns the
  * translation to the on-device location. Nothing above this file touches
  * Capacitor directly for file I/O.
+ *
+ * It is this app's VaultFileSystem, AssetUrls and SyncFastPath for
+ * @zennotes/portable-vault (whose PortableVault was this app's MobileVault),
+ * and holds the one registration of the ZenDirectUpload plugin: Capacitor
+ * keeps the first registerPlugin call's shape, so the object-storage PUT the
+ * package asks the host for (putFile) goes through the same proxy.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { Directory, Encoding, Filesystem, type FileInfo } from '@capacitor/filesystem'
-import { toBase64, type Zne1ChunkCipherParams } from '@zennotes/shared-domain/cloud-e2ee'
+import { isNotFoundError } from '@zennotes/portable-vault/fs-errors'
+import type {
+  CloudFileFingerprint,
+  PortableVaultFiles,
+  SyncFastPath,
+  Zne1NativeKeys,
+  Zne1NativeSealedFile
+} from '@zennotes/portable-vault/host'
+import { randomUUID } from '@zennotes/portable-vault/uuid'
 import { ensureDownloaded } from './icloud'
-import { isNotFoundError } from './fs-errors'
-import type { MobileSealedUploadFile } from './mobile-direct-upload'
-import { randomUUID } from './uuid'
 
 export const VAULTS_DIR = 'ZenNotes'
 
@@ -99,14 +110,6 @@ const SafFs = registerPlugin<{
   rmdirIfEmpty(o: { root: string; path: string }): Promise<void>
 }>('SafFs')
 
-export interface CloudFileFingerprint {
-  uri: string
-  sha256: string
-  byteLength: number
-  utf8: boolean
-  inlineBase64?: string
-}
-
 /**
  * One ZNE1 object for the native chunk loop (cloud-e2ee.md). JavaScript
  * derives the object key, builds the header, checks the key commitment and
@@ -153,10 +156,42 @@ const CloudFiles = registerPlugin<{
    * CLOUD_FILE_READ_FAILED.
    */
   readHeader(options: { source: string; length: number }): Promise<{ base64: string }>
+  /**
+   * PUTs a body to a signed object-storage URL: a vault file by its native
+   * URI (streamed, verified against sha256), or an in-memory one as base64.
+   * Resolves with the status; rejects only when no answer came.
+   */
+  put(options: {
+    url: string
+    headers: Record<string, string>
+    base64?: string
+    uri?: string
+    sha256?: string
+    byteLength: number
+  }): Promise<{ status: number }>
 }>('ZenDirectUpload')
 
-/** Base64 of what one ZNE1 object's native chunk loop needs; never a parent key. */
-export type Zne1NativeKeys = Pick<Zne1FileRequest, 'header' | 'objectKey' | 'aad'>
+/** The package's HttpTransport.putFile. This app's native PUT sends every
+ *  object-storage body, in-memory ones included (putsInMemoryBodies). */
+export function putFile(options: {
+  url: string
+  headers: Record<string, string>
+  byteLength: number
+  uri?: string
+  sha256?: string
+  base64?: string
+}): Promise<{ status: number }> {
+  return CloudFiles.put({
+    url: options.url,
+    headers: options.headers,
+    base64: options.base64,
+    uri: options.uri,
+    sha256: options.sha256,
+    byteLength: options.byteLength
+  })
+}
+
+export type { CloudFileFingerprint, Zne1NativeKeys }
 
 /** Where encrypted uploads are sealed: inside the vault's private sync folder, which sync never uploads from. */
 const UPLOAD_SEALING_DIRECTORY = '.zennotes/sync/uploads'
@@ -187,7 +222,7 @@ function encodeSegments(rel: string): string {
 
 const ICLOUD_STUB_RE = /^\.(.+)\.icloud$/
 
-export class NativeFs {
+export class NativeFs implements PortableVaultFiles, SyncFastPath {
   /** Path of the vault root inside Directory.Documents (local mode). */
   readonly rootPath: string
   /** file:// URL of the vault root in the ubiquity container (icloud mode). */
@@ -212,6 +247,22 @@ export class NativeFs {
 
   get isCloud(): boolean {
     return this.cloudRootUri !== null
+  }
+
+  /** The Cloud link key: the root's native URI once open (a picked folder's
+   *  SAF tree), its path before. Every existing link, sync state and scan
+   *  cache is keyed on it; it must not change. */
+  get syncKey(): string {
+    return this.rootUri ?? this.rootPath
+  }
+
+  get rootLabel(): string {
+    return this.rootUri ?? this.rootPath
+  }
+
+  /** Only a native not-found code reads as absence (the package's rule). */
+  isNotFound(error: unknown): boolean {
+    return isNotFoundError(error)
   }
 
   /** External-folder tier: the absolute root is a SAF content:// tree URI —
@@ -259,6 +310,12 @@ export class NativeFs {
       })
       this.rootUri = uri
       this.rootDirectory = directory
+    }
+    if (this.isCloud && this.rootUri) {
+      // Materialize evicted iCloud items before the first walk so nothing
+      // reads as missing (bounded wait; a no-op where there is no iCloud).
+      // MobileVault.open() did this; the vault leaves it to the host now.
+      await ensureDownloaded(this.rootUri, 20000)
     }
   }
 
@@ -530,10 +587,10 @@ export class NativeFs {
 
   /** Seal a file into a fresh private ZNE1 file for an encrypted vault's
    * streamed upload. JavaScript hands over only the object key, header and AAD
-   * the vault cipher made for this one file, so the plaintext never crosses the
-   * bridge. The caller discards the sealed file when the upload ends, however
-   * it ends. */
-  async sealForUpload(sourceUri: string, params: Zne1ChunkCipherParams): Promise<MobileSealedUploadFile> {
+   * the vault cipher made for this one file (base64, from the package), so the
+   * plaintext never crosses the bridge. The caller discards the sealed file
+   * when the upload ends, however it ends. */
+  async sealForUpload(sourceUri: string, keys: Zne1NativeKeys): Promise<Zne1NativeSealedFile> {
     const path = `${UPLOAD_SEALING_DIRECTORY}/${randomUUID()}.zne1`
     await this.mkdir(UPLOAD_SEALING_DIRECTORY)
     await this.writeBase64(path, '')
@@ -543,7 +600,7 @@ export class NativeFs {
       if (!target) throw new Error('Encrypted upload staging file is unavailable.')
       const sealed = await CloudFiles.encryptFile({
         source: sourceUri, destination: target.uri,
-        header: toBase64(params.header), objectKey: toBase64(params.objectKey), aad: toBase64(params.aad)
+        header: keys.header, objectKey: keys.objectKey, aad: keys.aad
       })
       return { ...sealed, uri: target.uri, discard }
     } catch (error) {

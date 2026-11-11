@@ -24,7 +24,8 @@
  */
 import type { VaultChangeEvent } from '@zennotes/bridge-contract/ipc'
 import { BACKGROUND_SYNC_KEY } from '../viewport'
-import { resumeMobileCloudRequests, stopMobileCloudRequests } from './cloud-sync-client'
+// The package's request lifetime: the one its Cloud client and auth read.
+import { resumeMobileCloudRequests, stopMobileCloudRequests } from '@zennotes/portable-vault/cloud-sync-client'
 
 export { BACKGROUND_SYNC_KEY }
 

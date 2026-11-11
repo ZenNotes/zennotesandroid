@@ -14,6 +14,7 @@ import { installMobileEditorHost } from './ui-mobile/editor-host'
 import { renderZenNotesApp } from '@zennotes/app-core/main'
 import {
   installMobileBridge,
+  installMobileHost,
   loadNativeAppVersion,
   bootVault,
   importPendingShares,
@@ -21,7 +22,7 @@ import {
 } from './bridge/mobile-bridge'
 import { installBackgroundSync } from './bridge/background-sync'
 import { installSystemBarTheme } from './bridge/system-bar-theme'
-import { configureMobileCloudAuth } from './bridge/mobile-cloud-auth'
+import { configureMobileCloudAuth } from '@zennotes/portable-vault/cloud-auth'
 import { maybeRunFirstRunOnboarding } from './ui-mobile/Onboarding'
 import { installWidgetPublisher } from './bridge/widgets'
 import { installDeepLinks } from './ui-mobile/deep-links'
@@ -92,6 +93,9 @@ async function boot(): Promise<void> {
   // Native answers boot can do without are bounded (boot-wait.ts), so a
   // bridge call that never answers cannot leave a blank page.
   const appVersion = await loadNativeAppVersion()
+  // The vault package reads its host from here on (Cloud sign-in first);
+  // the bridge app-core talks to is installed right after, as before.
+  installMobileHost()
   await waitAtBoot('Cloud sign-in links', configureMobileCloudAuth(appVersion))
   installMobileBridge()
   installBackgroundSync(mobileBackgroundSyncHost)

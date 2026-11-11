@@ -35,10 +35,11 @@ function parse(tag: 'base-config' | 'domain-config'): TrustConfig[] {
 }
 
 function cloudHosts(): string[] {
-  const source = read('src/bridge/mobile-cloud-auth.ts')
+  // Cloud sign-in is @zennotes/portable-vault's now (its cloud-auth export).
+  const source = read('node_modules/@zennotes/portable-vault/dist/mobile-cloud-auth.js')
   return ['PRODUCTION_CLOUD_BASE_URL', 'LEGACY_CLOUD_BASE_URL'].map((name) => {
     const url = new RegExp(`const ${name} = '([^']+)'`).exec(source)?.[1]
-    assert.ok(url, `${name} not found in mobile-cloud-auth.ts`)
+    assert.ok(url, `${name} not found in @zennotes/portable-vault's mobile-cloud-auth.js`)
     return new URL(url).hostname
   })
 }

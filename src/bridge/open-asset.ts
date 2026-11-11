@@ -15,10 +15,11 @@
  */
 import { registerPlugin } from '@capacitor/core'
 import { Directory, Filesystem } from '@capacitor/filesystem'
-import { RemoteVault } from './remote-vault'
-import { randomUUID } from './uuid'
-import type { MobileVault } from './vault-fs'
-import { resolveSafeRel } from './vault-core'
+import { RemoteVault } from '@zennotes/portable-vault/remote-vault'
+import { randomUUID } from '@zennotes/portable-vault/uuid'
+import type { PortableVault } from '@zennotes/portable-vault/vault'
+import { resolveSafeRel } from '@zennotes/portable-vault/vault-core'
+import type { NativeFs } from './native-fs'
 
 interface OpenFilePlugin {
   open(options: { uri: string }): Promise<void>
@@ -30,7 +31,7 @@ const OpenFile = registerPlugin<OpenFilePlugin>('OpenFile')
 const OPEN_CACHE_DIR = 'open-asset'
 
 export async function openAssetExternally(
-  vault: MobileVault | RemoteVault,
+  vault: PortableVault | RemoteVault,
   relPath: string
 ): Promise<{ ok: boolean; error?: string }> {
   let rel: string
@@ -41,7 +42,7 @@ export async function openAssetExternally(
   }
   try {
     const uri =
-      vault instanceof RemoteVault ? await stageRemoteAsset(vault, rel) : await localAssetUri(vault, rel)
+      vault instanceof RemoteVault ? await stageRemoteAsset(vault, rel) : await localAssetUri(vault as PortableVault<NativeFs>, rel)
     if (!uri) return { ok: false, error: 'The attachment is missing from this vault.' }
     await OpenFile.open({ uri })
     return { ok: true }
@@ -50,7 +51,7 @@ export async function openAssetExternally(
   }
 }
 
-async function localAssetUri(vault: MobileVault, rel: string): Promise<string | null> {
+async function localAssetUri(vault: PortableVault<NativeFs>, rel: string): Promise<string | null> {
   if (!(await vault.fs.statOrNull(rel))) return null
   return await vault.fs.fileUri(rel)
 }

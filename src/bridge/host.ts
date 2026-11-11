@@ -44,7 +44,7 @@ import { putFile } from './native-fs'
  * there is no native app to ask; the package reads appInfo() per call, so
  * nothing captures it before the native answer lands.
  */
-let appVersion = '1.1.57'
+let appVersion = '1.1.58'
 
 export async function loadNativeAppVersion(): Promise<string> {
   try {

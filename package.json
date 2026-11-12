@@ -42,7 +42,7 @@
     "@lezer/common": "^1.5.5",
     "@lezer/highlight": "^1.2.5",
     "@replit/codemirror-vim": "^6.3.0",
-    "@xyflow/react": "^12.12.0",
+    "@xyflow/react": "^12.12.1",
     "@zennotes/app-core": "file:vendor/zennotes/zennotes-app-core-2.85.0-core.h34304526f14f966c.tgz",
     "@zennotes/bridge-contract": "file:vendor/zennotes/zennotes-bridge-contract-2.85.0-boundaries.h513b3cf0f32aa142.tgz",
     "@zennotes/portable-vault": "file:vendor/zennotes/zennotes-portable-vault-2.85.0-boundaries.h513b3cf0f32aa142.tgz",
@@ -52,7 +52,7 @@
     "function-plot": "^1.26.0",
     "gray-matter": "^4.0.3",
     "highlight.js": "^11.10.0",
-    "jsxgraph": "^1.14.2",
+    "jsxgraph": "^1.14.3",
     "katex": "^0.16.15",
     "mermaid": "^11.17.2",
     "react": "^18.3.1",
@@ -71,7 +71,7 @@
     "unist-util-visit": "^5.2.0",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2",
-    "zustand": "^5.0.16"
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",

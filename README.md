@@ -158,6 +158,13 @@ Key decisions (all forced by "don't modify the zennotes repo"):
   also blurs the editor before `Keyboard.hide()` — Android's hide is
   `hideSoftInputFromWindow` only (no `endEditing`-style focus resign like
   iOS), and a still-focused editor re-summons the keyboard.
+- **The note header while typing** (issue #151): both shells hide the
+  breadcrumb header while the keyboard is up only on a landscape phone
+  (`max-height: 500px` and `orientation: landscape`); a portrait phone with a
+  tall keyboard also drops under 500px, and the header holds core's rename
+  field. Here the rule also skips a header that holds the focus
+  (`:not(:focus-within)`), so renaming from the title works in landscape too;
+  the iPhone shell does not have that guard yet.
 - **Folders/tags discoverability pass** (Discord feedback, 2026-08-14):
   inline "New folder" row at every drawer level (also the only way to create
   NESTED folders on a phone), note long-press → Move to…/Delete action sheet

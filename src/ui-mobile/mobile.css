@@ -2569,9 +2569,18 @@
    "covered by the keyboard" (issue #12). Reclaim the header while typing; the
    breadcrumb comes straight back when the keyboard is dismissed. The height
    query is safe to use here because .zn-phone has already established this is
-   a phone — a short *tablet* viewport never reaches this rule. */
-@media (max-height: 500px) {
-  .zn-mobile.zn-phone.zn-kb-open header.glass-header {
+   a phone, and a short *tablet* viewport never reaches this rule. The orientation
+   conjunct keeps it OUT of portrait, as on the iPhone: under Native keyboard
+   resize a phone's portrait viewport also drops under 500px once a tall
+   keyboard is up (360x800 less a keyboard with a number row), and hiding the
+   header there took the note's rename field with it, so a tap on the title
+   opened the field and closed it again as the keyboard arrived (#151). In
+   landscape the header still steps aside for typing in the note, but never
+   while it holds the focus itself: the rename field is in it, and the
+   keyboard that field raised is what would hide it. (The iPhone has the
+   orientation conjunct but not yet this focus guard.) */
+@media (max-height: 500px) and (orientation: landscape) {
+  .zn-mobile.zn-phone.zn-kb-open header.glass-header:not(:focus-within) {
     display: none;
   }
 

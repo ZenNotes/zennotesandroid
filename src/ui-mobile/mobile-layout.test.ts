@@ -188,3 +188,30 @@ test("a card's subtask bar ends before the phone's move handle (core 2.80)", () 
   assert.equal(declaration('.zn-phone .zn-kanban-move', 'right'), '4px')
   assert.equal(declaration('.zn-mobile.zn-phone [data-kanban-task-id] [data-kanban-progress]', 'padding-right'), '34px')
 })
+
+test('the keyboard never hides the header that holds the rename field, and never hides it in portrait (#151)', () => {
+  // Core's rename field is the title crumb in the note's header. A rule that
+  // hides the header while the keyboard is up takes the focused field with it:
+  // the field blurs, the keyboard drops and the rename never happens. A phone
+  // in portrait reaches max-height: 500px too once a tall keyboard is up
+  // (360x800 less a keyboard with a number row), so only landscape may hide it,
+  // and only while the focus is elsewhere.
+  const editorPane = readFileSync(
+    new URL('../../node_modules/@zennotes/app-core/dist/components/EditorPane.js', import.meta.url),
+    'utf8'
+  )
+  assert.match(editorPane, /"data-note-title-input": ""/)
+  let hidingRules = 0
+  css.walkRules((rule) => {
+    if (!rule.selectors.some((s) => s.includes('.zn-kb-open') && s.includes('header.glass-header'))) return
+    rule.walkDecls('display', (decl) => {
+      if (decl.value !== 'none') return
+      hidingRules += 1
+      const media = rule.parent?.type === 'atrule' ? (rule.parent as postcss.AtRule).params : ''
+      assert.match(media, /\(orientation: landscape\)/, `${rule.selector} is hidden under @media ${media}`)
+      // In landscape too, never the header that holds the focused field.
+      assert.match(rule.selector, /header\.glass-header:not\(:focus-within\)/, rule.selector)
+    })
+  })
+  assert.equal(hidingRules, 1)
+})

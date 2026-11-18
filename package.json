@@ -74,18 +74,18 @@
     "zustand": "^5.1.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.6.0",
+    "@capacitor/cli": "^8.6.2",
     "@types/node": "^22.20.5",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^6.3.0",
     "autoprefixer": "^10.6.2",
     "esbuild": "^0.28.2",
-    "harper.js": "^3.0.0",
-    "postcss": "^8.5.32",
+    "harper.js": "^3.2.0",
+    "postcss": "^8.5.33",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^8.3.7"
+    "vite": "^8.3.8"
   },
   "overrides": {
     "xcode": {
